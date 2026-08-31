@@ -1,0 +1,78 @@
+.security-review-legacy-hidden { display: none !important; }
+.security-review-shell { display: grid; gap: 18px; }
+.security-assessment-hero { display: flex; justify-content: space-between; gap: 24px; padding: 22px; border: 1px solid var(--border, #dce2ea); border-radius: 14px; background: var(--panel, #fff); }
+.security-assessment-hero.critical { border-left: 5px solid #b42318; }
+.security-assessment-hero.high { border-left: 5px solid #d92d20; }
+.security-assessment-hero.review { border-left: 5px solid #b54708; }
+.security-assessment-hero.neutral { border-left: 5px solid #667085; }
+.security-assessment-hero h2 { margin: 4px 0 8px; font-size: 22px; }
+.security-assessment-hero p { margin: 0; max-width: 760px; color: #667085; line-height: 1.55; }
+.security-eyebrow { text-transform: uppercase; letter-spacing: .08em; font-weight: 700; color: #475467; }
+.security-hero-badges, .security-badge-row, .security-chip-row, .security-report-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; }
+.security-badge { display: inline-flex; align-items: center; min-height: 26px; padding: 4px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid #d0d5dd; background: #f9fafb; color: #344054; }
+.security-badge.severity.critical { background: #fef3f2; color: #912018; border-color: #fecdca; }
+.security-badge.severity.high { background: #fff4ed; color: #9c2a10; border-color: #ffd6ae; }
+.security-badge.severity.medium { background: #fffaeb; color: #93370d; border-color: #fedf89; }
+.security-badge.severity.low { background: #ecfdf3; color: #027a48; border-color: #abefc6; }
+.security-badge.evidence.reproduced_fork, .security-badge.evidence.reproduced_model { background: #f4f3ff; color: #5925dc; border-color: #d9d6fe; }
+.security-badge.evidence.executed { background: #eef4ff; color: #3538cd; border-color: #c7d7fe; }
+.security-badge.evidence.structural { background: #eff8ff; color: #175cd3; border-color: #b2ddff; }
+.security-badge.evidence.heuristic { background: #f9fafb; color: #475467; }
+.security-stat-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.security-stat { padding: 14px; border: 1px solid #e4e7ec; border-radius: 12px; background: #fff; display: grid; gap: 6px; }
+.security-stat small { color: #667085; }
+.security-stat strong { font-size: 22px; }
+.security-stat.critical strong { color: #b42318; }
+.security-stat.high strong { color: #d92d20; }
+.security-stat.evidence strong { color: #5925dc; }
+.security-evidence-ladder { border: 1px solid #e4e7ec; border-radius: 14px; background: #fff; padding: 18px; }
+.security-evidence-ladder h3 { margin: 0 0 12px; }
+.security-ladder-grid { display: grid; gap: 8px; }
+.security-ladder-row { display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid #f2f4f7; }
+.security-ladder-row:first-child { border-top: 0; }
+.security-ladder-row > strong { font-size: 20px; text-align: center; }
+.security-ladder-row div { display: grid; gap: 2px; }
+.security-ladder-row span { color: #667085; font-size: 13px; }
+.security-completeness-warning { border: 1px solid #fedf89; background: #fffaeb; color: #7a2e0e; border-radius: 12px; padding: 14px 16px; }
+.security-completeness-warning ul { margin: 8px 0 0 18px; }
+.security-review-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.security-review-toolbar select { min-width: 180px; padding: 9px 12px; border: 1px solid #d0d5dd; border-radius: 9px; background: #fff; }
+.security-toolbar-count { color: #667085; font-size: 13px; margin-left: auto; }
+.security-finding-groups { display: grid; gap: 16px; }
+.security-contract-group { display: grid; gap: 10px; }
+.security-contract-header { display: flex; justify-content: space-between; align-items: end; padding: 0 2px; }
+.security-contract-header h3 { margin: 0; font-size: 17px; }
+.security-contract-header small { color: #667085; }
+.security-finding { display: grid; gap: 14px; padding: 18px; border: 1px solid #e4e7ec; border-radius: 14px; background: #fff; border-left-width: 4px; }
+.security-finding.severity-critical { border-left-color: #b42318; }
+.security-finding.severity-high { border-left-color: #d92d20; }
+.security-finding.severity-medium { border-left-color: #dc6803; }
+.security-finding.severity-low { border-left-color: #039855; }
+.security-finding.severity-info { border-left-color: #2e90fa; }
+.security-finding-heading { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; }
+.security-finding-heading h3 { margin: 8px 0 0; font-size: 17px; }
+.security-location code { white-space: nowrap; font-size: 12px; }
+.security-description { margin: 0; color: #475467; line-height: 1.6; }
+.security-meta-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.security-meta-row { display: grid; gap: 3px; padding: 9px 10px; border: 1px solid #f2f4f7; border-radius: 8px; background: #fcfcfd; }
+.security-meta-row span { color: #667085; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.security-meta-row strong { font-size: 13px; overflow-wrap: anywhere; }
+.security-guidance { padding: 12px 14px; border-radius: 10px; background: #f8fafc; border: 1px solid #e4e7ec; }
+.security-guidance p { margin: 5px 0 0; line-height: 1.55; }
+.security-inline-section { display: grid; gap: 8px; }
+.security-details { border-top: 1px solid #f2f4f7; padding-top: 10px; }
+.security-details summary { cursor: pointer; font-weight: 700; color: #344054; }
+.security-witness-list, .security-sequence { display: grid; gap: 7px; margin: 10px 0 0 20px; }
+.security-witness-list li { display: grid; gap: 2px; }
+.security-counterexample { display: grid; gap: 8px; margin-top: 10px; }
+.security-empty { display: grid; gap: 5px; text-align: center; padding: 36px 20px; border: 1px dashed #d0d5dd; border-radius: 12px; color: #667085; }
+@media (max-width: 1100px) {
+  .security-stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .security-meta-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .security-assessment-hero, .security-finding-heading { flex-direction: column; }
+  .security-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .security-meta-grid { grid-template-columns: 1fr; }
+  .security-toolbar-count { width: 100%; margin-left: 0; }
+}

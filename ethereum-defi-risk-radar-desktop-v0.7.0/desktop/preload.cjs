@@ -31,3 +31,20 @@ contextBridge.exposeInMainWorld("riskRadar", {
   onScanState: callback => subscribe("scan:state", callback),
   onNavigate: callback => subscribe("app:navigate", callback)
 });
+
+window.addEventListener("DOMContentLoaded", () => {
+  if (!document.getElementById("security-review-styles")) {
+    const stylesheet = document.createElement("link");
+    stylesheet.id = "security-review-styles";
+    stylesheet.rel = "stylesheet";
+    stylesheet.href = "./security-review.css";
+    document.head.appendChild(stylesheet);
+  }
+
+  if (document.querySelector('script[data-risk-radar-security-review="true"]')) return;
+  const script = document.createElement("script");
+  script.src = "./security-review.js";
+  script.dataset.riskRadarSecurityReview = "true";
+  script.defer = true;
+  document.head.appendChild(script);
+}, { once: true });

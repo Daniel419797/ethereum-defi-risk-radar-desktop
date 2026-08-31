@@ -1,0 +1,108 @@
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { inspectVerifiedSource } from "../dist/sourceAnalyzer.js";
+import { writeReports } from "../dist/report.js";
+
+const source = `
+pragma solidity ^0.8.20;
+contract ReviewFixture {
+  address public owner;
+  mapping(address => uint256) public balances;
+  function route(address target, bytes calldata payload) external {
+    require(tx.origin == owner, "origin");
+    target.call(payload);
+    balances[msg.sender] = 1;
+  }
+  function assemblySurface() external pure returns (uint256 result) {
+    assembly { result := 1 }
+  }
+}
+`;
+
+const inspection = inspectVerifiedSource(source);
+assert.ok(inspection.advancedAnalysis.findings.length > 0, "fixture must emit advanced findings");
+assert.ok(inspection.findings.some(finding => finding.kind === "inline_assembly"), "fixture must retain at least one independent source-review finding");
+
+const candidate = {
+  id: "review-fixture",
+  label: "Review Fixture Protocol",
+  hostname: "=1+1",
+  chain: "ethereum",
+  network: "mainnet",
+  researchScore: 81,
+  ethereumConfidence: 95,
+  signalCount: 3,
+  sourceDiversity: 2,
+  kinds: ["public_audit_finding", "historical_incident", "admin_governance_risk"],
+  evidence: [],
+  ethereum: {
+    chainId: 1,
+    network: "ethereum-mainnet",
+    contractReferencesObserved: 1,
+    etherscanLookupsAttempted: 1,
+    verifiedSourceContracts: 1,
+    proxyContracts: 0,
+    sourceContractsInspected: 1,
+    sourceFindingCount: inspection.findingCount,
+    sourceHighReviewCount: inspection.severityCounts.HIGH_REVIEW,
+    advancedFindingCount: inspection.advancedAnalysis.findings.length,
+    sourceInspections: [{
+      contractRefId: "fixture-contract",
+      contractName: "ReviewFixture",
+      compilerVersion: "0.8.20",
+      proxy: false,
+      inspection
+    }]
+  },
+  classification: "HIGH_RESEARCH_PRIORITY"
+};
+
+const [preload, rendererJs, rendererCss] = await Promise.all([
+  fs.readFile(path.resolve("desktop/preload.cjs"), "utf8"),
+  fs.readFile(path.resolve("desktop/renderer/security-review.js"), "utf8"),
+  fs.readFile(path.resolve("desktop/renderer/security-review.css"), "utf8")
+]);
+assert.match(preload, /security-review\.js/, "preload must attach the finding-first renderer");
+assert.match(preload, /security-review\.css/, "preload must attach CSP-compatible security review styles");
+assert.match(preload, /security-review-styles/, "stylesheet must use the stable id expected by the renderer");
+assert.match(rendererJs, /REPRODUCED_FORK/);
+assert.match(rendererJs, /counterexample/);
+assert.match(rendererJs, /analysis completeness warning/i);
+assert.match(rendererCss, /\.security-assessment-hero/);
+assert.match(rendererCss, /\.security-finding\.severity-critical/);
+
+const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "risk-radar-security-review-"));
+try {
+  const paths = await writeReports({ candidates: [candidate], outputDir, startYear: 2020, endYear: 2026 });
+  assert.ok(paths.securityReviewPath.endsWith("-security-review.html"));
+  assert.ok(paths.findingsCsvPath.endsWith("-findings.csv"));
+
+  const [summaryCsv, findingsCsv, html, json] = await Promise.all([
+    fs.readFile(paths.csvPath, "utf8"),
+    fs.readFile(paths.findingsCsvPath, "utf8"),
+    fs.readFile(paths.securityReviewPath, "utf8"),
+    fs.readFile(paths.jsonPath, "utf8")
+  ]);
+
+  assert.match(summaryCsv, /securityFindingCount/);
+  assert.match(summaryCsv, /assessmentStatus/);
+  assert.match(summaryCsv, /STRUCTURAL_SECURITY_FINDINGS|HEURISTIC_REVIEW_SIGNALS/);
+  assert.match(summaryCsv, /"'=1\+1"/, "summary CSV must neutralize spreadsheet formulas");
+  assert.match(findingsCsv, /evidenceKey/);
+  assert.match(findingsCsv, /source_review/);
+  assert.match(findingsCsv, /inline_assembly/);
+  assert.match(findingsCsv, /advanced/);
+  assert.match(findingsCsv, /STRUCTURAL/);
+  assert.match(findingsCsv, /"'=1\+1"/, "findings CSV must neutralize spreadsheet formulas");
+  assert.match(html, /Finding-first security review/);
+  assert.match(html, /Severity and evidence strength are independent/);
+  assert.match(html, /Review Fixture Protocol/);
+  assert.match(html, /tx\.origin|Transaction origin/);
+  assert.doesNotMatch(json, /0x[a-fA-F0-9]{40}/, "reports must not retain full EVM addresses");
+
+  console.log(`Security review checks passed: ${inspection.advancedAnalysis.findings.length} advanced findings, independent heuristic review coverage, CSV formula neutralization, renderer wiring + detailed CSV/HTML exports verified.`);
+} finally {
+  await fs.rm(outputDir, { recursive: true, force: true });
+}

@@ -1,0 +1,90 @@
+{
+  "version": 2,
+  "task_id": "finding-first-security-review",
+  "title": "Finding-first production security review workspace",
+  "requirements": [
+    { "id": "FR-1", "text": "Preserve CRITICAL, HIGH, MEDIUM, LOW, and INFO severity independently from evidence strength." },
+    { "id": "FR-2", "text": "Display HEURISTIC, STRUCTURAL, EXECUTED, REPRODUCED-model, and REPRODUCED-fork evidence distinctly." },
+    { "id": "FR-3", "text": "Group findings by protocol contract and expose location, confidence, engine, reachability, remediation, mitigations, witness paths, limitations, and counterexample metadata where available." },
+    { "id": "FR-4", "text": "Surface partial-analysis and truncation warnings so absence of a finding is never presented as a clean pass." },
+    { "id": "FR-5", "text": "Generate a row-per-finding CSV export." },
+    { "id": "FR-6", "text": "Generate a standalone finding-first HTML security review." },
+    { "id": "FR-7", "text": "Retain report address redaction and do not serialize raw verified Solidity source." },
+    { "id": "FR-8", "text": "Load the desktop review layer without weakening the renderer Content Security Policy." },
+    { "id": "NFR-1", "text": "Pass build, security-review, analysis, proof-grade, security, accessibility, reliability, and operability gates before merge." }
+  ],
+  "checks": [
+    {
+      "id": "security-review-tests",
+      "type": "command",
+      "required": true,
+      "evidence_kind": "tests",
+      "requirement_ids": ["FR-1", "FR-2", "FR-3", "FR-4", "FR-5", "FR-6", "FR-7", "FR-8", "NFR-1"],
+      "executable": "npm.cmd",
+      "arguments": ["run", "test:security-review"],
+      "expected_exit_code": 0
+    },
+    {
+      "id": "analysis-tests",
+      "type": "command",
+      "required": true,
+      "evidence_kind": "tests",
+      "requirement_ids": ["FR-1", "FR-2", "FR-3", "NFR-1"],
+      "executable": "npm.cmd",
+      "arguments": ["run", "test:analysis"],
+      "expected_exit_code": 0
+    },
+    {
+      "id": "proof-tests",
+      "type": "command",
+      "required": true,
+      "evidence_kind": "tests",
+      "requirement_ids": ["FR-2", "FR-3", "NFR-1"],
+      "executable": "npm.cmd",
+      "arguments": ["run", "test:proof"],
+      "expected_exit_code": 0
+    },
+    {
+      "id": "application-check",
+      "type": "command",
+      "required": true,
+      "evidence_kind": "build",
+      "requirement_ids": ["FR-5", "FR-6", "FR-8", "NFR-1"],
+      "executable": "npm.cmd",
+      "arguments": ["run", "check"],
+      "expected_exit_code": 0
+    },
+    {
+      "id": "security-evidence",
+      "type": "adapter",
+      "adapter": "security",
+      "required": true,
+      "evidence_kind": "security",
+      "requirement_ids": ["FR-7", "FR-8", "NFR-1"]
+    },
+    {
+      "id": "browser-evidence",
+      "type": "adapter",
+      "adapter": "browser",
+      "required": true,
+      "evidence_kind": "accessibility",
+      "requirement_ids": ["FR-1", "FR-2", "FR-3", "FR-4", "FR-8", "NFR-1"]
+    }
+  ],
+  "quality_gates": {
+    "security": "required",
+    "correctness": "required",
+    "reliability": "required",
+    "performance": "required",
+    "accessibility": "required",
+    "operability": "required"
+  },
+  "quality_gate_checks": {
+    "security": ["security-evidence", "security-review-tests", "proof-tests"],
+    "correctness": ["security-review-tests", "analysis-tests", "proof-tests", "application-check"],
+    "reliability": ["security-review-tests", "analysis-tests", "application-check"],
+    "performance": ["analysis-tests"],
+    "accessibility": ["browser-evidence"],
+    "operability": ["application-check"]
+  }
+}
