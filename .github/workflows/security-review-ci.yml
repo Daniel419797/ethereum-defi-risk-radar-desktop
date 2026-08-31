@@ -1,0 +1,52 @@
+name: Risk Radar CI
+
+on:
+  pull_request:
+    paths:
+      - "ethereum-defi-risk-radar-desktop-v0.7.0/**"
+      - ".github/workflows/security-review-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "ethereum-defi-risk-radar-desktop-v0.7.0/**"
+      - ".github/workflows/security-review-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: risk-radar-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Build and security verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ethereum-defi-risk-radar-desktop-v0.7.0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ethereum-defi-risk-radar-desktop-v0.7.0/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build and smoke checks
+        run: npm run check
+
+      - name: Analysis engine checks
+        run: npm run test:analysis
+
+      - name: Evidence-grade proof checks
+        run: npm run test:proof
