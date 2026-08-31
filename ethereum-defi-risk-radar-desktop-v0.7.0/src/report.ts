@@ -11,20 +11,42 @@ import type { SourceFinding, SourceFindingSeverity } from "./sourceAnalyzer.js";
 import type { Candidate, ContractInspectionSummary } from "./types.js";
 
 const EVM_ADDRESS_RE = /0x[a-fA-F0-9]{40}/g;
+const CSV_FORMULA_RE = /^[\t\r ]*[=+\-@]/;
+const SOURCE_REVIEW_ONLY_EXCLUSIONS = new Set(["reentrancy_guard_present"]);
+
+const LEGACY_TO_ADVANCED_KIND: Partial<Record<SourceFinding["kind"], AnalysisFinding["kind"][]>> = {
+  tx_origin: ["authorization"],
+  delegatecall: ["upgradeability", "cross_contract_calls"],
+  low_level_call: ["cross_contract_calls", "reentrancy"],
+  value_transfer_call: ["cross_contract_calls", "reentrancy"],
+  privileged_access: ["authorization", "governance_risk"],
+  upgradeability_pattern: ["upgradeability"],
+  initializer_pattern: ["upgradeability"],
+  unchecked_block: ["arithmetic_precision"],
+  signature_recovery: ["signature_replay"],
+  oracle_price_surface: ["oracle_risk"],
+  legacy_solidity: ["arithmetic_precision"]
+};
 
 function redactAddresses(value: string) {
   return value.replace(EVM_ADDRESS_RE, "[contract-address]");
 }
 
 function reportSafeCandidates(candidates: Candidate[]): Candidate[] {
-  // Reports intentionally omit raw public contract addresses even when a search-result
-  // URL, analyzer message, or counterexample contained one. Raw verified source is not
-  // serialized into Candidate and is therefore not present in these reports either.
+  // Redaction happens before any serialized report format is generated, so JSON, CSV and
+  // HTML all inherit the same privacy boundary. Raw verified Solidity is not serialized
+  // into Candidate and therefore cannot leak through this path either.
   return JSON.parse(redactAddresses(JSON.stringify(candidates))) as Candidate[];
 }
 
+function neutralizeCsvFormula(value: string) {
+  return CSV_FORMULA_RE.test(value) ? `'${value}` : value;
+}
+
 function csvEscape(value: unknown) {
-  const str = String(value ?? "");
+  // Quoting does not prevent spreadsheet formula execution. Prefix potentially executable
+  // cells with an apostrophe before normal RFC-style CSV quoting.
+  const str = neutralizeCsvFormula(String(value ?? "").replaceAll("\0", ""));
   return `"${str.replaceAll('"', '""')}"`;
 }
 
@@ -38,11 +60,11 @@ function htmlEscape(value: unknown) {
 }
 
 function legacySeverity(value: SourceFindingSeverity): AnalysisSeverity {
-  if (value === "HIGH_REVIEW") return "HIGH";
-  return value;
+  return value === "HIGH_REVIEW" ? "HIGH" : value;
 }
 
 type FindingSourceLayer = "advanced" | "source_review";
+type EvidenceKey = "REPRODUCED_FORK" | "REPRODUCED_MODEL" | "EXECUTED" | "STRUCTURAL" | "HEURISTIC";
 
 type ExportFinding = {
   candidateId: string;
@@ -151,23 +173,38 @@ function sourceReviewFinding(candidate: Candidate, inspection: ContractInspectio
   };
 }
 
+function sourceFindingShadowedByAdvanced(finding: SourceFinding, advanced: AnalysisFinding[]) {
+  const mappedKinds = LEGACY_TO_ADVANCED_KIND[finding.kind];
+  if (!mappedKinds?.length) return false;
+  return advanced.some(candidate => {
+    if (!mappedKinds.includes(candidate.kind)) return false;
+    if (!candidate.primaryLocation) return false;
+    return candidate.primaryLocation.file === finding.file && Math.abs(candidate.primaryLocation.line - finding.line) <= 2;
+  });
+}
+
 function flattenSecurityFindings(candidate: Candidate): ExportFinding[] {
   const rows: ExportFinding[] = [];
   for (const inspection of candidate.ethereum.sourceInspections) {
-    rows.push(...inspection.inspection.advancedAnalysis.findings.map(finding => advancedFinding(candidate, inspection, finding)));
-    rows.push(...inspection.inspection.findings.map(finding => sourceReviewFinding(candidate, inspection, finding)));
+    const advanced = inspection.inspection.advancedAnalysis.findings;
+    rows.push(...advanced.map(finding => advancedFinding(candidate, inspection, finding)));
+    for (const finding of inspection.inspection.findings) {
+      if (SOURCE_REVIEW_ONLY_EXCLUSIONS.has(finding.kind)) continue;
+      if (sourceFindingShadowedByAdvanced(finding, advanced)) continue;
+      rows.push(sourceReviewFinding(candidate, inspection, finding));
+    }
   }
 
   const seen = new Set<string>();
   return rows.filter(row => {
-    const key = [row.contractRefId, row.sourceLayer, row.kind, row.file, row.line, row.title].join("|");
+    const key = [row.contractRefId, row.kind, row.file, row.line, row.title, row.evidenceStrength, row.evidenceScope || ""].join("|");
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
 }
 
-function evidenceKey(finding: ExportFinding) {
+function evidenceKey(finding: ExportFinding): EvidenceKey {
   if (finding.evidenceStrength === "REPRODUCED") {
     return finding.evidenceScope === "fork" ? "REPRODUCED_FORK" : "REPRODUCED_MODEL";
   }
@@ -206,11 +243,16 @@ function assessmentStatus(candidate: Candidate, findings: ExportFinding[]) {
 
 function findingCounts(findings: ExportFinding[]) {
   const severity: Record<AnalysisSeverity, number> = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
-  const evidence = { REPRODUCED_FORK: 0, REPRODUCED_MODEL: 0, EXECUTED: 0, STRUCTURAL: 0, HEURISTIC: 0 };
+  const evidence: Record<EvidenceKey, number> = {
+    REPRODUCED_FORK: 0,
+    REPRODUCED_MODEL: 0,
+    EXECUTED: 0,
+    STRUCTURAL: 0,
+    HEURISTIC: 0
+  };
   for (const finding of findings) {
     severity[finding.severity] += 1;
-    const key = evidenceKey(finding);
-    evidence[key as keyof typeof evidence] += 1;
+    evidence[evidenceKey(finding)] += 1;
   }
   return { severity, evidence };
 }
@@ -226,7 +268,9 @@ function renderFindingHtml(finding: ExportFinding) {
     ["Engine", finding.engine],
     ["Reachable externally", finding.reachableFromExternalEntry === undefined ? "Unknown" : finding.reachableFromExternalEntry ? "Yes" : "No"]
   ];
-  const metaHtml = metadata.map(([label, value]) => `<div class="meta"><span>${htmlEscape(label)}</span><strong>${htmlEscape(value)}</strong></div>`).join("");
+  const metaHtml = metadata
+    .map(([label, value]) => `<div class="meta"><span>${htmlEscape(label)}</span><strong>${htmlEscape(value)}</strong></div>`)
+    .join("");
   const remediation = finding.remediation
     ? `<div class="guidance"><strong>Recommended remediation</strong><p>${htmlEscape(finding.remediation)}</p></div>`
     : "";
@@ -266,10 +310,13 @@ function renderCandidateHtml(candidate: Candidate) {
 
   const groupHtml = [...contractGroups.values()].map(group => {
     const first = group[0];
-    const sorted = [...group].sort((a, b) => {
-      const severityOrder: Record<AnalysisSeverity, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4 };
-      return severityOrder[a.severity] - severityOrder[b.severity] || a.line - b.line;
-    });
+    const severityOrder: Record<AnalysisSeverity, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4 };
+    const evidenceOrder: Record<EvidenceKey, number> = { REPRODUCED_FORK: 0, REPRODUCED_MODEL: 1, EXECUTED: 2, STRUCTURAL: 3, HEURISTIC: 4 };
+    const sorted = [...group].sort((a, b) =>
+      evidenceOrder[evidenceKey(a)] - evidenceOrder[evidenceKey(b)] ||
+      severityOrder[a.severity] - severityOrder[b.severity] ||
+      a.line - b.line
+    );
     return `<section class="contract"><div class="contract-head"><div><h3>${htmlEscape(first.contractName)}</h3><small>${htmlEscape(first.compilerVersion || "Compiler unknown")}${first.proxy ? " · proxy" : ""}</small></div><strong>${sorted.length} finding${sorted.length === 1 ? "" : "s"}</strong></div>${sorted.map(renderFindingHtml).join("")}</section>`;
   }).join("");
 
@@ -309,7 +356,6 @@ export async function writeReports(opts: {
   await fs.mkdir(opts.outputDir, { recursive: true });
   const safeCandidates = reportSafeCandidates(opts.candidates);
   const generatedAt = new Date().toISOString();
-
   const stamp = generatedAt.replace(/[:.]/g, "-");
   const base = `ethereum-defi-risk-radar-${opts.startYear}-${opts.endYear}-${stamp}`;
 
@@ -327,18 +373,15 @@ export async function writeReports(opts: {
       "Public-web OSINT plus verified-source structural analysis. EXECUTED requires a captured counterexample; REPRODUCED always states model or pinned-fork scope. Model reproduction is not evidence about deployed bytecode. Truncation records mark incomplete result sets. Full contract addresses and raw source are deliberately not written to reports.",
     candidates: safeCandidates
   };
-
   await fs.writeFile(jsonPath, JSON.stringify(payload, null, 2), "utf8");
 
-  const summaryRows = [
-    [
-      "id", "label", "hostname", "chain", "network", "researchScore", "ethereumConfidence", "classification",
-      "signalCount", "sourceDiversity", "kinds", "contractReferencesObserved", "verifiedSourceContracts", "proxyContracts",
-      "sourceContractsInspected", "sourceFindingCount", "sourceHighReviewCount", "advancedFindingCount", "advancedDroppedFindingCount",
-      "protocolContractCount", "protocolCallCount", "evidenceCount", "securityFindingCount", "criticalFindingCount", "highFindingCount",
-      "executedFindingCount", "reproducedModelFindingCount", "reproducedForkFindingCount", "assessmentStatus", "analysisPartial"
-    ].map(csvEscape).join(",")
-  ];
+  const summaryRows = [[
+    "id", "label", "hostname", "chain", "network", "researchScore", "ethereumConfidence", "classification",
+    "signalCount", "sourceDiversity", "kinds", "contractReferencesObserved", "verifiedSourceContracts", "proxyContracts",
+    "sourceContractsInspected", "sourceFindingCount", "sourceHighReviewCount", "advancedFindingCount", "advancedDroppedFindingCount",
+    "protocolContractCount", "protocolCallCount", "evidenceCount", "securityFindingCount", "criticalFindingCount", "highFindingCount",
+    "executedFindingCount", "reproducedModelFindingCount", "reproducedForkFindingCount", "assessmentStatus", "analysisPartial"
+  ].map(csvEscape).join(",")];
 
   for (const candidate of safeCandidates) {
     const findings = flattenSecurityFindings(candidate);
