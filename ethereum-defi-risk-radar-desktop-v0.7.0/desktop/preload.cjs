@@ -33,6 +33,14 @@ contextBridge.exposeInMainWorld("riskRadar", {
 });
 
 window.addEventListener("DOMContentLoaded", () => {
+  if (!document.getElementById("security-review-styles")) {
+    const stylesheet = document.createElement("link");
+    stylesheet.id = "security-review-styles";
+    stylesheet.rel = "stylesheet";
+    stylesheet.href = "./security-review.css";
+    document.head.appendChild(stylesheet);
+  }
+
   if (document.querySelector('script[data-risk-radar-security-review="true"]')) return;
   const script = document.createElement("script");
   script.src = "./security-review.js";
