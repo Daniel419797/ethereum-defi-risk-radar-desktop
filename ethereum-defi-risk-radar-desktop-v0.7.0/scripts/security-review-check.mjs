@@ -15,17 +15,20 @@ contract ReviewFixture {
     target.call(payload);
     balances[msg.sender] = 1;
   }
+  function assemblySurface() external pure returns (uint256 result) {
+    assembly { result := 1 }
+  }
 }
 `;
 
 const inspection = inspectVerifiedSource(source);
 assert.ok(inspection.advancedAnalysis.findings.length > 0, "fixture must emit advanced findings");
-assert.ok(inspection.findings.length > 0, "fixture must emit source-review findings");
+assert.ok(inspection.findings.some(finding => finding.kind === "inline_assembly"), "fixture must retain at least one independent source-review finding");
 
 const candidate = {
   id: "review-fixture",
   label: "Review Fixture Protocol",
-  hostname: "example.invalid",
+  hostname: "=1+1",
   chain: "ethereum",
   network: "mainnet",
   researchScore: 81,
@@ -86,17 +89,20 @@ try {
   assert.match(summaryCsv, /securityFindingCount/);
   assert.match(summaryCsv, /assessmentStatus/);
   assert.match(summaryCsv, /STRUCTURAL_SECURITY_FINDINGS|HEURISTIC_REVIEW_SIGNALS/);
+  assert.match(summaryCsv, /"'=1\+1"/, "summary CSV must neutralize spreadsheet formulas");
   assert.match(findingsCsv, /evidenceKey/);
   assert.match(findingsCsv, /source_review/);
+  assert.match(findingsCsv, /inline_assembly/);
   assert.match(findingsCsv, /advanced/);
   assert.match(findingsCsv, /STRUCTURAL/);
+  assert.match(findingsCsv, /"'=1\+1"/, "findings CSV must neutralize spreadsheet formulas");
   assert.match(html, /Finding-first security review/);
   assert.match(html, /Severity and evidence strength are independent/);
   assert.match(html, /Review Fixture Protocol/);
   assert.match(html, /tx\.origin|Transaction origin/);
   assert.doesNotMatch(json, /0x[a-fA-F0-9]{40}/, "reports must not retain full EVM addresses");
 
-  console.log(`Security review checks passed: ${inspection.advancedAnalysis.findings.length} advanced findings, ${inspection.findings.length} source-review findings, renderer wiring + detailed CSV/HTML exports verified.`);
+  console.log(`Security review checks passed: ${inspection.advancedAnalysis.findings.length} advanced findings, independent heuristic review coverage, CSV formula neutralization, renderer wiring + detailed CSV/HTML exports verified.`);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }
