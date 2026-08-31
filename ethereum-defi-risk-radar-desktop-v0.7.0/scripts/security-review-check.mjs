@@ -56,6 +56,20 @@ const candidate = {
   classification: "HIGH_RESEARCH_PRIORITY"
 };
 
+const [preload, rendererJs, rendererCss] = await Promise.all([
+  fs.readFile(path.resolve("desktop/preload.cjs"), "utf8"),
+  fs.readFile(path.resolve("desktop/renderer/security-review.js"), "utf8"),
+  fs.readFile(path.resolve("desktop/renderer/security-review.css"), "utf8")
+]);
+assert.match(preload, /security-review\.js/, "preload must attach the finding-first renderer");
+assert.match(preload, /security-review\.css/, "preload must attach CSP-compatible security review styles");
+assert.match(preload, /security-review-styles/, "stylesheet must use the stable id expected by the renderer");
+assert.match(rendererJs, /REPRODUCED_FORK/);
+assert.match(rendererJs, /counterexample/);
+assert.match(rendererJs, /analysis completeness warning/i);
+assert.match(rendererCss, /\.security-assessment-hero/);
+assert.match(rendererCss, /\.security-finding\.severity-critical/);
+
 const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "risk-radar-security-review-"));
 try {
   const paths = await writeReports({ candidates: [candidate], outputDir, startYear: 2020, endYear: 2026 });
@@ -82,7 +96,7 @@ try {
   assert.match(html, /tx\.origin|Transaction origin/);
   assert.doesNotMatch(json, /0x[a-fA-F0-9]{40}/, "reports must not retain full EVM addresses");
 
-  console.log(`Security review checks passed: ${inspection.advancedAnalysis.findings.length} advanced findings, ${inspection.findings.length} source-review findings, detailed CSV + HTML exports generated.`);
+  console.log(`Security review checks passed: ${inspection.advancedAnalysis.findings.length} advanced findings, ${inspection.findings.length} source-review findings, renderer wiring + detailed CSV/HTML exports verified.`);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }
