@@ -1,0 +1,14 @@
+{
+  "prices": { "ETH": 1000, "USD": 1 },
+  "pools": {
+    "RiskFixture": {
+      "reserves": { "ETH": 1 },
+      "liabilities": { "USD": 750 }
+    }
+  },
+  "actor": {
+    "id": "researcher",
+    "balances": { "ETH": 1 },
+    "debt": {}
+  }
+}

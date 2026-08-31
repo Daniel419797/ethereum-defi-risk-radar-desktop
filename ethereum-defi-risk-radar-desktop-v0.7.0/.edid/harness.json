@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "default_mode": "adaptive",
+  "repair_limit": 3,
+  "command_timeout_seconds": 300,
+  "max_evidence_output_chars": 200000,
+  "permissions": {
+    "project_root_only": true,
+    "allow_network_evaluation": false,
+    "allowed_http_hosts": [],
+    "allowed_executables": [
+      "go",
+      "git",
+      "npm",
+      "npm.cmd",
+      "npx",
+      "npx.cmd",
+      "pnpm",
+      "pnpm.cmd",
+      "powershell",
+      "pwsh",
+      "python",
+      "python.exe"
+    ],
+    "denied_argument_patterns": [
+      "rm -rf",
+      "Remove-Item -Recurse",
+      "git reset --hard",
+      "git clean -fd",
+      "git push --force",
+      "DROP DATABASE",
+      "DROP SCHEMA"
+    ]
+  },
+  "adapters": {
+    "browser": {
+      "executable": "powershell",
+      "arguments": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".edid/adapters/Invoke-Adapter.ps1", "-Name", "browser"],
+      "working_directory": ".",
+      "expected_exit_code": 0,
+      "blocked_exit_codes": [20]
+    },
+    "deployment": {
+      "executable": "powershell",
+      "arguments": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".edid/adapters/Invoke-Adapter.ps1", "-Name", "deployment"],
+      "working_directory": ".",
+      "expected_exit_code": 0,
+      "blocked_exit_codes": [20]
+    },
+    "observability": {
+      "executable": "powershell",
+      "arguments": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".edid/adapters/Invoke-Adapter.ps1", "-Name", "observability"],
+      "working_directory": ".",
+      "expected_exit_code": 0,
+      "blocked_exit_codes": [20]
+    },
+    "security": {
+      "executable": "powershell",
+      "arguments": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".edid/adapters/Invoke-Adapter.ps1", "-Name", "security"],
+      "working_directory": ".",
+      "expected_exit_code": 0,
+      "blocked_exit_codes": [20]
+    }
+  },
+  "release": {
+    "locally_verified": ["tests", "build"],
+    "deployed": ["tests", "build", "deployment_health", "migration", "monitoring", "rollback"],
+    "production_proven": ["tests", "build", "deployment_health", "migration", "monitoring", "rollback", "backup_restore", "live_integrations", "security"]
+  }
+}

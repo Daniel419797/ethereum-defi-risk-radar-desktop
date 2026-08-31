@@ -1,0 +1,128 @@
+{
+  "name": "ethereum-defi-risk-radar",
+  "version": "0.7.0",
+  "private": true,
+  "type": "module",
+  "description": "Cross-platform defensive Ethereum Mainnet DeFi OSINT desktop app with a bundled risk-radar CLI sharing OS-encrypted desktop credentials.",
+  "scripts": {
+    "scan": "node dist/cli.js",
+    "start": "node dist/cli.js",
+    "build": "tsc -p tsconfig.json",
+    "desktop": "npm run build && electron .",
+    "desktop:dev": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win nsis --x64",
+    "dist:dir": "npm run build && electron-builder --dir",
+    "check": "npm run build && node scripts/smoke-check.mjs",
+    "test:analysis": "npm run build && node scripts/analysis-check.mjs",
+    "test:proof": "npm run build && node scripts/proof-analysis-check.mjs",
+    "dist:mac": "npm run build && node scripts/check-macos-release.mjs && electron-builder --mac dmg zip --universal",
+    "dist:mac:x64": "npm run build && node scripts/check-macos-release.mjs && electron-builder --mac dmg zip --x64",
+    "dist:mac:arm64": "npm run build && node scripts/check-macos-release.mjs && electron-builder --mac dmg zip --arm64",
+    "dist:mac:unsigned": "npm run build && electron-builder --mac dmg zip --universal -c.mac.identity=null -c.mac.hardenedRuntime=false -c.mac.notarize=false",
+    "verify:mac": "bash scripts/verify-macos.sh",
+    "cli:dev": "npm run build && electron . --cli"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.2",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "main": "dist/desktop/main.js",
+  "build": {
+    "appId": "com.defiriskradar.ethereum",
+    "productName": "Ethereum DeFi Risk Radar",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "desktop/preload.cjs",
+      "desktop/renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "Ethereum-DeFi-Risk-Radar-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Ethereum DeFi Risk Radar",
+      "include": "build/installer.nsh"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns",
+      "minimumSystemVersion": "12.0",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "notarize": true,
+      "artifactName": "Ethereum-DeFi-Risk-Radar-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "Ethereum DeFi Risk Radar ${version}",
+      "icon": "build/icon.icns",
+      "iconSize": 96,
+      "window": {
+        "width": 560,
+        "height": 380
+      },
+      "contents": [
+        {
+          "x": 150,
+          "y": 190,
+          "type": "file"
+        },
+        {
+          "x": 410,
+          "y": 190,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "background": "build/dmg-background.png",
+      "iconTextSize": 12
+    },
+    "extraResources": [
+      {
+        "from": "cli",
+        "to": "cli",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
+  },
+  "productName": "Ethereum DeFi Risk Radar"
+}

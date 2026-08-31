@@ -1,0 +1,152 @@
+{
+    "version":  1,
+    "project_state":  "locally_verified",
+    "phase":  "specify",
+    "active_task_id":  "proof-grade-analysis",
+    "tasks":  [
+                  {
+                      "id":  "expanded-analysis-engine",
+                      "title":  "Expanded multi-engine DeFi security analysis",
+                      "scope":  "product",
+                      "risk":  "critical",
+                      "mode":  "high_assurance",
+                      "status":  "complete",
+                      "depends_on":  [
+
+                                     ],
+                      "contract_path":  ".edid/contracts/expanded-analysis-engine.json",
+                      "independent_evaluation_required":  true,
+                      "allowed_paths":  [
+
+                                        ],
+                      "denied_paths":  [
+                                           ".env",
+                                           ".git",
+                                           "secrets",
+                                           "credentials"
+                                       ],
+                      "created_at":  "2026-08-30T22:02:09.3671368Z",
+                      "updated_at":  "2026-08-31T12:16:34.1209993Z"
+                  },
+                  {
+                      "id":  "proof-grade-analysis",
+                      "title":  "Proof-grade contract and protocol vulnerability analysis",
+                      "scope":  "product",
+                      "risk":  "critical",
+                      "mode":  "high_assurance",
+                      "status":  "draft",
+                      "depends_on":  [
+
+                                     ],
+                      "contract_path":  ".edid/contracts/proof-grade-analysis.json",
+                      "independent_evaluation_required":  true,
+                      "allowed_paths":  [
+
+                                        ],
+                      "denied_paths":  [
+                                           ".env",
+                                           ".git",
+                                           "secrets",
+                                           "credentials"
+                                       ],
+                      "created_at":  "2026-08-31T12:19:31.2215579Z",
+                      "updated_at":  "2026-08-31T12:19:31.2310918Z"
+                  }
+              ],
+    "evidence":  [
+                     {
+                         "id":  "a684f9a673a54b4cabecd7fcb267a234",
+                         "task_id":  "expanded-analysis-engine",
+                         "kind":  "tests",
+                         "source":  "harness:20260831T121525564Z-expanded-analysis-engine/analysis-tests",
+                         "result":  "pass",
+                         "summary":  "Exit code 0; expected 0",
+                         "artifact_path":  ".edid/evidence/20260831T121525564Z-expanded-analysis-engine/analysis-tests.log",
+                         "recorded_at":  "2026-08-31T12:15:38.9212049Z"
+                     },
+                     {
+                         "id":  "e68fd04c47b64ea49f3396700ac7d8ef",
+                         "task_id":  "expanded-analysis-engine",
+                         "kind":  "build",
+                         "source":  "harness:20260831T121525564Z-expanded-analysis-engine/application-check",
+                         "result":  "pass",
+                         "summary":  "Exit code 0; expected 0",
+                         "artifact_path":  ".edid/evidence/20260831T121525564Z-expanded-analysis-engine/application-check.log",
+                         "recorded_at":  "2026-08-31T12:15:48.1318131Z"
+                     },
+                     {
+                         "id":  "f290ec9d204e4cea922cc8adc1097b49",
+                         "task_id":  "expanded-analysis-engine",
+                         "kind":  "security",
+                         "source":  "harness:20260831T121525564Z-expanded-analysis-engine/security-evidence",
+                         "result":  "pass",
+                         "summary":  "Exit code 0; expected 0",
+                         "artifact_path":  ".edid/evidence/20260831T121525564Z-expanded-analysis-engine/security-evidence.log",
+                         "recorded_at":  "2026-08-31T12:16:04.4644366Z"
+                     },
+                     {
+                         "id":  "03be4117a82f428482ae87a3761a83d7",
+                         "task_id":  "expanded-analysis-engine",
+                         "kind":  "accessibility",
+                         "source":  "harness:20260831T121525564Z-expanded-analysis-engine/browser-evidence",
+                         "result":  "pass",
+                         "summary":  "Exit code 0; expected 0",
+                         "artifact_path":  ".edid/evidence/20260831T121525564Z-expanded-analysis-engine/browser-evidence.log",
+                         "recorded_at":  "2026-08-31T12:16:12.2181400Z"
+                     }
+                 ],
+    "evaluation_runs":  [
+                            {
+                                "id":  "20260831T121525564Z-expanded-analysis-engine",
+                                "task_id":  "expanded-analysis-engine",
+                                "builder_id":  "root-builder",
+                                "evaluator_id":  "independent-security-architecture-reviewers",
+                                "independent":  true,
+                                "verdict":  "pass",
+                                "results":  [
+                                                {
+                                                    "check_id":  "analysis-tests",
+                                                    "type":  "command",
+                                                    "required":  true,
+                                                    "evidence_kind":  "tests",
+                                                    "result":  "pass",
+                                                    "summary":  "Exit code 0; expected 0",
+                                                    "artifact_path":  ".edid/evidence/20260831T121525564Z-expanded-analysis-engine/analysis-tests.log"
+                                                },
+                                                {
+                                                    "check_id":  "application-check",
+                                                    "type":  "command",
+                                                    "required":  true,
+                                                    "evidence_kind":  "build",
+                                                    "result":  "pass",
+                                                    "summary":  "Exit code 0; expected 0",
+                                                    "artifact_path":  ".edid/evidence/20260831T121525564Z-expanded-analysis-engine/application-check.log"
+                                                },
+                                                {
+                                                    "check_id":  "security-evidence",
+                                                    "type":  "adapter",
+                                                    "required":  true,
+                                                    "evidence_kind":  "security",
+                                                    "result":  "pass",
+                                                    "summary":  "Exit code 0; expected 0",
+                                                    "artifact_path":  ".edid/evidence/20260831T121525564Z-expanded-analysis-engine/security-evidence.log"
+                                                },
+                                                {
+                                                    "check_id":  "browser-evidence",
+                                                    "type":  "adapter",
+                                                    "required":  true,
+                                                    "evidence_kind":  "accessibility",
+                                                    "result":  "pass",
+                                                    "summary":  "Exit code 0; expected 0",
+                                                    "artifact_path":  ".edid/evidence/20260831T121525564Z-expanded-analysis-engine/browser-evidence.log"
+                                                }
+                                            ],
+                                "evaluated_at":  "2026-08-31T12:16:12.2261426Z"
+                            }
+                        ],
+    "repair_packets":  [
+
+                       ],
+    "last_handoff_at":  "2026-08-31T12:16:49.1974429Z",
+    "updated_at":  "2026-08-31T12:19:31.2400933Z"
+}

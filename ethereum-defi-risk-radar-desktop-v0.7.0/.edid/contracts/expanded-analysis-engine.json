@@ -1,0 +1,56 @@
+{
+  "version": 2,
+  "task_id": "expanded-analysis-engine",
+  "title": "Expanded multi-engine DeFi security analysis",
+  "requirements": [
+    { "id": "FR-1", "text": "Implement control-flow analysis." },
+    { "id": "FR-2", "text": "Implement data-flow analysis." },
+    { "id": "FR-3", "text": "Implement source-to-sink taint analysis with evidence paths." },
+    { "id": "FR-4", "text": "Integrate optional bounded symbolic execution." },
+    { "id": "FR-5", "text": "Integrate optional ABI-aware fuzzing with reproducible seeds." },
+    { "id": "FR-6", "text": "Integrate optional stateful invariant testing." },
+    { "id": "FR-7", "text": "Implement storage, state, proxy-slot, and upgrade-layout analysis." },
+    { "id": "FR-8", "text": "Implement cross-contract call and callback analysis." },
+    { "id": "FR-9", "text": "Implement deterministic economic attack scenario simulation." },
+    { "id": "FR-10", "text": "Cover all documented DeFi categories through an extensible registry." },
+    { "id": "FR-11", "text": "Detect optional local tools without requiring Python or Docker." },
+    { "id": "FR-12", "text": "Expose normalized results in desktop, CLI, JSON, and CSV." },
+    { "id": "FR-13", "text": "Support verified-address and local-project analysis inputs." },
+    { "id": "NFR-1", "text": "Pass security, correctness, reliability, performance, accessibility, and operability gates." }
+  ],
+  "checks": [
+    {
+      "id": "analysis-tests", "type": "command", "required": true,
+      "evidence_kind": "tests",
+      "requirement_ids": ["FR-1", "FR-2", "FR-3", "FR-7", "FR-8", "FR-9", "FR-10", "FR-11", "FR-13", "NFR-1"],
+      "executable": "npm.cmd", "arguments": ["run", "test:analysis"], "expected_exit_code": 0
+    },
+    {
+      "id": "application-check", "type": "command", "required": true,
+      "evidence_kind": "build",
+      "requirement_ids": ["FR-4", "FR-5", "FR-6", "FR-12", "NFR-1"],
+      "executable": "npm.cmd", "arguments": ["run", "check"], "expected_exit_code": 0
+    },
+    {
+      "id": "security-evidence", "type": "adapter", "adapter": "security", "required": true,
+      "evidence_kind": "security",
+      "requirement_ids": ["FR-4", "FR-5", "FR-6", "FR-11", "FR-13", "NFR-1"]
+    },
+    {
+      "id": "browser-evidence", "type": "adapter", "adapter": "browser", "required": true,
+      "evidence_kind": "accessibility", "requirement_ids": ["FR-12", "NFR-1"]
+    }
+  ],
+  "quality_gates": {
+    "security": "required", "correctness": "required", "reliability": "required",
+    "performance": "required", "accessibility": "required", "operability": "required"
+  },
+  "quality_gate_checks": {
+    "security": ["security-evidence", "analysis-tests"],
+    "correctness": ["analysis-tests", "application-check"],
+    "reliability": ["analysis-tests", "application-check"],
+    "performance": ["analysis-tests"],
+    "accessibility": ["browser-evidence"],
+    "operability": ["application-check"]
+  }
+}

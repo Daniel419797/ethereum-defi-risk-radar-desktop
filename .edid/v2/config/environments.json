@@ -1,0 +1,10 @@
+{
+  "version":1,
+  "environments":[
+    {"name":"local","required_evidence":["tests","build"],"required_approvals":0,"credential_names":[],"status":"unverified"},
+    {"name":"test","required_evidence":["tests","build","migration"],"required_approvals":0,"credential_names":[],"status":"unverified"},
+    {"name":"preview","required_evidence":["tests","build","browser","deployment_health"],"required_approvals":0,"credential_names":[],"status":"unverified"},
+    {"name":"staging","required_evidence":["tests","build","browser","deployment_health","migration","monitoring","rollback"],"required_approvals":1,"credential_names":[],"status":"unverified"},
+    {"name":"production","required_evidence":["tests","build","browser","deployment_health","migration","monitoring","rollback","backup_restore","live_integrations","security"],"required_approvals":2,"credential_names":[],"status":"unverified"}
+  ]
+}

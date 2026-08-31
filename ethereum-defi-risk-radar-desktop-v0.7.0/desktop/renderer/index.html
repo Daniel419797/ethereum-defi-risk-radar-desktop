@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'" />
+  <title>Ethereum DeFi Risk Radar</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <div class="brand">
+        <div class="brand-radar" aria-hidden="true"><span></span></div>
+        <div>
+          <strong>Ethereum DeFi<br />Risk Radar</strong>
+          <small id="brand-version">v0.7.0</small>
+        </div>
+      </div>
+
+      <div id="setup-rail" class="setup-rail hidden" aria-label="Setup progress">
+        <button id="setup-rail-step-1" class="setup-rail-item active" type="button">
+          <span class="rail-number">1</span><span>API Setup</span>
+        </button>
+        <button id="setup-rail-step-2" class="setup-rail-item" type="button">
+          <span class="rail-number">2</span><span>Finish Setup</span>
+        </button>
+        <div class="rail-divider"></div>
+      </div>
+
+      <nav id="primary-nav" class="primary-nav">
+        <button class="nav-button active" type="button" data-screen="dashboard">
+          <span class="nav-glyph">▦</span><span>Dashboard</span>
+        </button>
+        <button class="nav-button" type="button" data-screen="results">
+          <span class="nav-glyph">▥</span><span>Results</span>
+        </button>
+        <button class="nav-button" type="button" data-screen="activity">
+          <span class="nav-glyph">⌁</span><span>Activity</span>
+        </button>
+        <button class="nav-button" type="button" data-screen="settings">
+          <span class="nav-glyph">⚙</span><span>Settings</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-spacer"></div>
+      <div class="defensive-card">
+        <div class="defensive-icon">◇</div>
+        <div>
+          <strong>Defensive Mode</strong>
+          <small><span class="live-dot"></span> Passive research only</small>
+        </div>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <!-- First launch: step 1 -->
+      <section id="screen-onboarding-keys" class="screen onboarding-screen hidden" aria-labelledby="onboarding-keys-title">
+        <div class="onboarding-stepper" aria-label="Step 1 of 2">
+          <span class="step-dot active">1</span><span class="step-line"></span><span class="step-dot">2</span>
+          <strong>Step 1 of 2</strong>
+        </div>
+        <div class="onboarding-card">
+          <div class="onboarding-icon">⌁</div>
+          <h1 id="onboarding-keys-title">Connect your research APIs</h1>
+          <p>Add API credentials for public-web discovery and optional verified Solidity source inspection.</p>
+
+          <form id="setup-keys-form" class="setup-form">
+            <label class="field-group">
+              <span class="field-label">TinyFish API Key <b>*</b></span>
+              <span class="field-help">Required for public-web discovery</span>
+              <span class="secret-input-wrap">
+                <input id="setup-tinyfish-key" type="password" autocomplete="off" placeholder="Enter your TinyFish API key" required />
+                <button class="text-button reveal-button" type="button" data-reveal="setup-tinyfish-key">Show</button>
+              </span>
+            </label>
+
+            <label class="field-group">
+              <span class="field-label">Etherscan API Key <em>optional</em></span>
+              <span class="field-help">Enables verified Solidity source inspection</span>
+              <span class="secret-input-wrap">
+                <input id="setup-etherscan-key" type="password" autocomplete="off" placeholder="Enter your Etherscan API key" />
+                <button class="text-button reveal-button" type="button" data-reveal="setup-etherscan-key">Show</button>
+              </span>
+            </label>
+
+            <div id="setup-secure-warning" class="notice danger hidden">
+              Secure OS encryption is unavailable. API credentials cannot be stored safely on this device.
+            </div>
+            <div id="setup-secure-info" class="notice info">ⓘ Credentials are encrypted with OS-backed secure storage.</div>
+            <div id="setup-keys-error" class="form-error hidden"></div>
+            <div class="form-actions right">
+              <button id="setup-continue" class="primary-button" type="submit">Continue <span>›</span></button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- First launch: step 2 -->
+      <section id="screen-onboarding-advanced" class="screen onboarding-screen hidden" aria-labelledby="onboarding-advanced-title">
+        <div class="onboarding-stepper" aria-label="Step 2 of 2">
+          <span class="step-dot complete">✓</span><span class="step-line complete"></span><span class="step-dot active">2</span>
+          <strong>Step 2 of 2</strong>
+        </div>
+        <div class="onboarding-card advanced-card">
+          <h1 id="onboarding-advanced-title">Advanced scan settings</h1>
+          <p>Fine-tune search limits, Ethereum enrichment, verified-source inspection and report output.</p>
+
+          <form id="setup-advanced-form" class="advanced-form">
+            <label class="setting-row">
+              <span>TinyFish Search Endpoint</span>
+              <input id="setup-endpoint" type="url" />
+            </label>
+            <label class="setting-row">
+              <span>Pages per query</span>
+              <input id="setup-pages" type="number" min="1" max="10" />
+            </label>
+            <label class="setting-row">
+              <span>Minimum public signals</span>
+              <input id="setup-min-signals" type="number" min="2" max="8" />
+            </label>
+            <label class="setting-row">
+              <span>Etherscan lookups / candidate</span>
+              <input id="setup-etherscan-lookups" type="number" min="0" max="5" />
+            </label>
+            <label class="setting-row toggle-row">
+              <span>Inspect verified Solidity</span>
+              <span class="toggle-wrap"><input id="setup-inspect-source" type="checkbox" /><span>Enabled</span></span>
+            </label>
+            <label class="setting-row">
+              <span>Maximum source bytes</span>
+              <input id="setup-source-bytes" type="number" min="10000" max="5000000" step="10000" />
+            </label>
+            <label class="setting-row">
+              <span>Max findings / contract</span>
+              <input id="setup-max-findings" type="number" min="1" max="250" />
+            </label>
+            <div class="setting-row">
+              <span>Report output folder</span>
+              <div class="folder-control"><input id="setup-output-dir" type="text" readonly /><button id="setup-change-folder" class="secondary-button" type="button">▢ Change</button></div>
+            </div>
+            <div id="setup-cli-row" class="setting-row cli-setup-row">
+              <span>Command line</span>
+              <label class="cli-setup-option"><input id="setup-install-cli" type="checkbox" checked /><span><strong>Install <code>risk-radar</code> terminal command</strong><small id="setup-cli-note">Use the same secure settings from Terminal.</small></span></label>
+            </div>
+            <div id="setup-advanced-error" class="form-error hidden"></div>
+            <div class="form-actions split">
+              <button id="setup-back" class="secondary-button" type="button">Back</button>
+              <button id="setup-launch" class="primary-button" type="submit">▷ Save &amp; Launch</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Dashboard -->
+      <section id="screen-dashboard" class="screen hidden" aria-labelledby="dashboard-title">
+        <header class="screen-header">
+          <div>
+            <h1 id="dashboard-title">Ethereum Mainnet Research</h1>
+            <p>Passive OSINT + verified-source static inspection</p>
+          </div>
+        </header>
+
+        <div class="connection-strip">
+          <article class="connection-card"><div class="provider-icon eth">◆</div><div><strong>Ethereum Mainnet</strong><small>Chain ID 1</small></div><span class="status-check static">✓</span></article>
+          <article class="connection-card"><div class="provider-icon tinyfish">◖</div><div><strong>TinyFish</strong><small id="dashboard-tinyfish-status">Configured</small></div><span id="dashboard-tinyfish-check" class="status-check">•</span></article>
+          <article class="connection-card"><div class="provider-icon etherscan">▥</div><div><strong>Etherscan</strong><small id="dashboard-etherscan-status">Optional</small></div><span id="dashboard-etherscan-check" class="status-check neutral">•</span></article>
+          <button id="dashboard-test-connections" class="outline-button test-button" type="button">⌁ Test Connections</button>
+        </div>
+
+        <article class="panel scan-config-panel">
+          <h2>New Scan</h2>
+          <div class="scan-controls">
+            <label><span>Start Year</span><input id="dashboard-start-year" type="number" min="2016" /></label>
+            <label><span>End Year</span><input id="dashboard-end-year" type="number" min="2016" /></label>
+            <label><span>Pages / Query</span><input id="dashboard-pages" type="number" min="1" max="10" /></label>
+            <button id="dashboard-start-scan" class="primary-button scan-action" type="button">▷ START SCAN</button>
+          </div>
+          <div class="guardrails"><span>◇ No RPC probing</span><span>◇ No transactions</span><span>◇ No exploit generation</span></div>
+        </article>
+
+        <div class="metric-grid four">
+          <article class="metric-card blue"><div class="metric-icon">●●</div><div><small>Candidates</small><strong id="dashboard-metric-candidates">0</strong></div></article>
+          <article class="metric-card red"><div class="metric-icon">!</div><div><small>High Priority</small><strong id="dashboard-metric-high">0</strong></div></article>
+          <article class="metric-card green"><div class="metric-icon">✓</div><div><small>Source Reviewed</small><strong id="dashboard-metric-reviewed">0</strong></div></article>
+          <article class="metric-card purple"><div class="metric-icon">⚑</div><div><small>High-Review Flags</small><strong id="dashboard-metric-flags">0</strong></div></article>
+        </div>
+
+        <div class="dashboard-bottom-grid">
+          <article class="panel progress-card">
+            <h2 id="dashboard-progress-heading">Scan status</h2>
+            <div class="progress-layout">
+              <div class="progress-ring-wrap">
+                <svg class="progress-ring" width="146" height="146" viewBox="0 0 146 146" aria-hidden="true">
+                  <circle class="ring-track" cx="73" cy="73" r="59"></circle>
+                  <circle id="dashboard-progress-ring" class="ring-value" cx="73" cy="73" r="59"></circle>
+                </svg>
+                <strong id="dashboard-progress-percent">0%</strong>
+              </div>
+              <div class="progress-copy">
+                <div class="phase-row"><span id="dashboard-progress-phase" class="phase-badge">READY</span><strong id="dashboard-progress-counter"></strong></div>
+                <progress id="dashboard-progress-linear" max="100" value="0"></progress>
+                <p id="dashboard-progress-message">Ready to begin a passive scan.</p>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel live-activity-card">
+            <div class="panel-title-row"><h2>Live activity</h2><button id="dashboard-view-activity" class="text-button" type="button">View all</button></div>
+            <div id="dashboard-live-log" class="compact-log"><div class="empty-inline">No activity yet.</div></div>
+          </article>
+        </div>
+
+        <div class="notice info footer-notice">ⓘ High research priority and high review are review signals, not proof of an exploitable vulnerability.</div>
+      </section>
+
+      <!-- Results -->
+      <section id="screen-results" class="screen hidden" aria-labelledby="results-title">
+        <header class="screen-header">
+          <div><h1 id="results-title">Research Candidates</h1><p>Passive Ethereum Mainnet research — verified sources, public signals and review priorities.</p></div>
+        </header>
+
+        <div class="metric-grid four results-metrics">
+          <article class="metric-card blue"><div class="metric-icon">●●</div><div><small>Total Candidates</small><strong id="results-metric-candidates">0</strong></div></article>
+          <article class="metric-card red"><div class="metric-icon">!</div><div><small>High Priority</small><strong id="results-metric-high">0</strong></div></article>
+          <article class="metric-card green"><div class="metric-icon">✓</div><div><small>Source Reviewed</small><strong id="results-metric-reviewed">0</strong></div></article>
+          <article class="metric-card purple"><div class="metric-icon">⚑</div><div><small>High-Review Flags</small><strong id="results-metric-flags">0</strong></div></article>
+        </div>
+
+        <article class="panel results-panel">
+          <div class="results-toolbar">
+            <label class="search-field"><span>⌕</span><input id="results-search" type="search" placeholder="Search candidates..." /></label>
+            <div class="toolbar-actions">
+              <select id="results-sort" aria-label="Sort candidates"><option value="score-desc">Highest score</option><option value="confidence-desc">Highest ETH confidence</option><option value="name-asc">Candidate name</option></select>
+              <button id="results-open-folder" class="outline-button" type="button">▢ Open Reports Folder</button>
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="results-table">
+              <thead><tr><th>Score</th><th>Candidate</th><th>ETH Confidence</th><th>Signals</th><th>Verified</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="results-table-body"></tbody>
+            </table>
+          </div>
+          <div id="results-empty" class="empty-state hidden"><div class="empty-icon">⌁</div><strong>No candidates to show</strong><span>Run a scan or adjust your search filter.</span></div>
+          <div id="results-report-actions" class="report-actions hidden">
+            <span id="results-report-label">Reports are available.</span>
+            <button id="results-show-json" class="secondary-button" type="button">Show JSON</button>
+            <button id="results-show-csv" class="secondary-button" type="button">Show CSV</button>
+          </div>
+        </article>
+      </section>
+
+      <!-- Candidate workspace -->
+      <section id="screen-candidate" class="screen hidden" aria-labelledby="candidate-title">
+        <button id="candidate-back" class="back-link" type="button">← Back to Results</button>
+        <header class="candidate-header">
+          <div>
+            <div class="candidate-title-row"><h1 id="candidate-title">Candidate</h1><span id="candidate-priority" class="priority-badge">REVIEW</span></div>
+            <button id="candidate-host-link" class="host-link" type="button">source.example ↗</button>
+          </div>
+        </header>
+
+        <div class="candidate-score-grid">
+          <article class="score-card"><span>Research Score ⓘ</span><strong id="candidate-score">0 / 100</strong><progress id="candidate-score-progress" max="100" value="0"></progress></article>
+          <article class="score-card confidence"><span>Ethereum Confidence ⓘ</span><strong id="candidate-confidence">0%</strong><progress id="candidate-confidence-progress" max="100" value="0"></progress></article>
+        </div>
+
+        <div class="candidate-tabs" role="tablist">
+          <button class="candidate-tab active" type="button" data-candidate-tab="overview">Overview</button>
+          <button class="candidate-tab" type="button" data-candidate-tab="findings">Source Findings <span id="candidate-findings-count" class="tab-count">0</span></button>
+          <button class="candidate-tab" type="button" data-candidate-tab="evidence">Public Evidence <span id="candidate-evidence-count" class="tab-count">0</span></button>
+        </div>
+
+        <div id="candidate-tab-overview" class="candidate-tab-panel">
+          <div id="candidate-overview-metrics" class="metric-grid six compact"></div>
+          <article class="panel signal-panel">
+            <h2>Public Signals Detected</h2>
+            <p>Signals gathered from public search evidence and source metadata.</p>
+            <div id="candidate-signal-chips" class="signal-chip-list"></div>
+          </article>
+          <article class="notice info interpretation-panel">
+            <h2>ⓘ Interpretation</h2>
+            <p id="candidate-interpretation"></p>
+            <p>This classification reflects public historical or structural signals. It does not establish current exploitability.</p>
+          </article>
+        </div>
+
+        <div id="candidate-tab-findings" class="candidate-tab-panel hidden">
+          <div id="findings-severity-metrics" class="metric-grid four"></div>
+          <div class="findings-toolbar">
+            <label>Severity<select id="findings-severity-filter"><option value="ALL">All</option><option value="HIGH_REVIEW">High Review</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option><option value="INFO">Info</option></select></label>
+            <label>Category<select id="findings-kind-filter"><option value="ALL">All</option></select></label>
+            <label>Sort<select id="findings-sort"><option value="severity">Severity first</option><option value="file">File &amp; line</option></select></label>
+          </div>
+          <div id="candidate-findings-list" class="finding-list"></div>
+          <div id="candidate-findings-empty" class="empty-state hidden"><div class="empty-icon">✓</div><strong>No findings match this filter</strong><span>Adjust the severity or category filter.</span></div>
+        </div>
+
+        <div id="candidate-tab-evidence" class="candidate-tab-panel hidden">
+          <p class="tab-intro">Publicly available evidence and reports associated with this research candidate.</p>
+          <div id="candidate-evidence-list" class="evidence-list"></div>
+          <div id="candidate-evidence-empty" class="empty-state hidden"><div class="empty-icon">⌕</div><strong>No public evidence recorded</strong><span>This candidate has no evidence rows in the current result.</span></div>
+          <div class="notice info">ⓘ Trust labels are source-reputation heuristics used for research prioritization, not guarantees of correctness.</div>
+        </div>
+      </section>
+
+      <!-- Activity -->
+      <section id="screen-activity" class="screen hidden" aria-labelledby="activity-title">
+        <header class="screen-header"><div><h1 id="activity-title">Scanner Activity</h1><p>Live execution log for passive OSINT and verified-source inspection.</p></div></header>
+
+        <div class="activity-layout">
+          <div>
+            <div class="metric-grid three activity-metrics">
+              <article class="metric-card blue"><div class="metric-icon">□</div><div><small>Last Scan</small><strong id="activity-last-scan">—</strong></div></article>
+              <article class="metric-card green"><div class="metric-icon">✓</div><div><small>Status</small><strong id="activity-status">Idle</strong></div></article>
+              <article class="metric-card blue"><div class="metric-icon">●●</div><div><small>Candidates</small><strong id="activity-candidates">0</strong></div></article>
+            </div>
+
+            <article class="panel activity-log-panel">
+              <div class="panel-title-row"><h2>Live Activity Log</h2><button id="activity-clear-log" class="outline-button small" type="button">⌫ Clear Log</button></div>
+              <div id="activity-log" class="full-log" role="log" aria-live="polite"><div class="empty-inline">Scanner is idle.</div></div>
+            </article>
+          </div>
+
+          <aside class="activity-summary-column">
+            <article class="panel summary-panel">
+              <h2>Recent Scan Summary</h2>
+              <dl class="summary-list">
+                <div><dt>Time Range</dt><dd id="summary-range">—</dd></div>
+                <div><dt>Pages / Query</dt><dd id="summary-pages">—</dd></div>
+                <div><dt>Sources Inspected</dt><dd id="summary-reviewed">0</dd></div>
+                <div><dt>High Priority</dt><dd id="summary-high">0</dd></div>
+                <div><dt>High-Review Flags</dt><dd id="summary-flags">0</dd></div>
+                <div><dt>Started</dt><dd id="summary-started">—</dd></div>
+                <div><dt>Completed</dt><dd id="summary-completed">—</dd></div>
+                <div><dt>Duration</dt><dd id="summary-duration">—</dd></div>
+              </dl>
+              <button id="activity-export-summary" class="outline-button full-width" type="button">⇩ Export Summary</button>
+            </article>
+
+            <article class="panel highlights-panel">
+              <h2>Top Activity Highlights</h2>
+              <div class="highlight-row blue"><span>⌕</span><div><small>Years Scanned</small><strong id="highlight-years">—</strong></div></div>
+              <div class="highlight-row green"><span>✓</span><div><small>Sources Inspected</small><strong id="highlight-reviewed">0</strong></div></div>
+              <div class="highlight-row purple"><span>⚑</span><div><small>High-Review Flags</small><strong id="highlight-flags">0</strong></div></div>
+              <div class="highlight-row red"><span>!</span><div><small>High Priority Candidates</small><strong id="highlight-high">0</strong></div></div>
+              <div class="highlight-row blue"><span>●●</span><div><small>Total Candidates</small><strong id="highlight-candidates">0</strong></div></div>
+            </article>
+          </aside>
+        </div>
+      </section>
+
+      <!-- Settings -->
+      <section id="screen-settings" class="screen hidden" aria-labelledby="settings-title">
+        <header class="screen-header"><div><h1 id="settings-title">Settings</h1><p>Configure connections, scan defaults, source inspection and report output.</p></div></header>
+
+        <article class="panel settings-section">
+          <h2>⌁ API Connections</h2>
+          <div class="connection-setting-row">
+            <div class="provider-icon tinyfish">◖</div>
+            <div class="connection-setting-copy"><div><strong>TinyFish</strong><span id="settings-tinyfish-badge" class="connected-badge">Configured</span></div><small id="settings-tinyfish-endpoint"></small></div>
+            <button id="settings-replace-tinyfish" class="outline-button" type="button">Replace API Key</button>
+          </div>
+          <div class="connection-setting-row">
+            <div class="provider-icon etherscan">▥</div>
+            <div class="connection-setting-copy"><div><strong>Etherscan</strong><span id="settings-etherscan-badge" class="connected-badge neutral">Optional</span></div><small>https://api.etherscan.io/v2/api</small></div>
+            <div class="inline-actions"><button id="settings-replace-etherscan" class="outline-button" type="button">Replace API Key</button><button id="settings-remove-etherscan" class="danger-button hidden" type="button">Remove</button></div>
+          </div>
+        </article>
+
+        <form id="settings-form">
+          <article class="panel settings-section">
+            <h2>⚙ Scan Defaults</h2>
+            <div class="settings-grid four">
+              <label><span>Pages / query</span><input id="settings-pages" type="number" min="1" max="10" /></label>
+              <label><span>Minimum public signals</span><input id="settings-min-signals" type="number" min="2" max="8" /></label>
+              <label><span>Etherscan lookups / candidate</span><input id="settings-etherscan-lookups" type="number" min="0" max="5" /></label>
+              <label class="toggle-setting"><span>Inspect verified source</span><span class="toggle-wrap"><input id="settings-inspect-source" type="checkbox" /><b>ON</b></span></label>
+            </div>
+          </article>
+
+          <article class="panel settings-section">
+            <h2>⌕ Source Inspection</h2>
+            <div class="settings-grid two">
+              <label><span>Maximum source bytes</span><input id="settings-source-bytes" type="number" min="10000" max="5000000" step="10000" /></label>
+              <label><span>Maximum findings</span><input id="settings-max-findings" type="number" min="1" max="250" /></label>
+            </div>
+          </article>
+
+          <article class="panel settings-section">
+            <h2>⌘ Analysis Engines</h2>
+            <p class="settings-help">Native structural analysis is built in. Deeper symbolic, fuzzing, invariant, compiler-IR and fork workflows become available automatically when their local tools are installed.</p>
+            <div id="analysis-capability-list" class="capability-grid" aria-live="polite"></div>
+          </article>
+
+          <article class="panel settings-section">
+            <h2>▤ Reports</h2>
+            <div class="report-setting-row"><span>Output directory</span><input id="settings-output-dir" type="text" readonly /><button id="settings-change-folder" class="outline-button" type="button">▢ Change Folder</button><button id="settings-open-folder" class="secondary-button" type="button">↗ Open Folder</button></div>
+          </article>
+
+          <article class="panel settings-section">
+            <h2>›_ Command Line</h2>
+            <div class="cli-setting-row">
+              <div class="cli-setting-copy">
+                <div><strong><code>risk-radar</code></strong><span id="settings-cli-badge" class="connected-badge neutral">Checking…</span></div>
+                <small id="settings-cli-detail">The installed CLI uses the same OS-encrypted API keys and scan settings as this desktop app.</small>
+                <code id="settings-cli-path" class="cli-path"></code>
+              </div>
+              <div class="inline-actions">
+                <button id="settings-install-cli" class="outline-button" type="button">Install / Repair CLI</button>
+                <button id="settings-remove-cli" class="danger-button hidden" type="button">Remove CLI</button>
+              </div>
+            </div>
+            <div class="cli-help-line"><span>After installation, open a new terminal and run:</span><code>risk-radar doctor</code><code>risk-radar help</code></div>
+          </article>
+
+          <div id="settings-error" class="form-error hidden"></div>
+          <div class="settings-footer"><button id="settings-test-connections" class="primary-button secondary-primary" type="button">⌁ Test Connections</button><button id="settings-save" class="primary-button" type="submit">Save Settings</button></div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <!-- Connection test modal -->
+  <div id="connection-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="connection-modal-title">
+    <div class="modal-backdrop" data-close-modal="connection-modal"></div>
+    <div class="modal-card connection-modal-card">
+      <div class="modal-header"><div><h2 id="connection-modal-title">Connection Test Results</h2><p id="connection-modal-subtitle">Testing configured connections...</p></div><button class="icon-button" type="button" data-close-modal="connection-modal">×</button></div>
+      <div class="connection-test-card">
+        <div class="test-provider-header"><div class="provider-icon tinyfish">◖</div><strong>TinyFish Search API</strong><span id="connection-tinyfish-result" class="test-result pending">Testing…</span></div>
+        <div class="test-detail"><span>Endpoint</span><strong id="connection-tinyfish-endpoint">https://api.search.tinyfish.ai</strong></div>
+        <div class="test-detail"><span>Message</span><strong id="connection-tinyfish-message">Waiting for response</strong></div>
+      </div>
+      <div id="connection-etherscan-card" class="connection-test-card">
+        <div class="test-provider-header"><div class="provider-icon etherscan">▥</div><strong>Etherscan API</strong><span id="connection-etherscan-result" class="test-result pending">Testing…</span></div>
+        <div class="test-detail"><span>Endpoint</span><strong>https://api.etherscan.io/v2/api</strong></div>
+        <div class="test-detail"><span>Message</span><strong id="connection-etherscan-message">Waiting for response</strong></div>
+      </div>
+      <button class="primary-button full-width" type="button" data-close-modal="connection-modal">Close</button>
+    </div>
+  </div>
+
+  <!-- Replace API key modal -->
+  <div id="key-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="key-modal-title">
+    <div class="modal-backdrop" data-close-modal="key-modal"></div>
+    <div class="modal-card small-modal-card">
+      <div class="modal-header"><div><h2 id="key-modal-title">Replace API Key</h2><p id="key-modal-description">Enter a new API key.</p></div><button class="icon-button" type="button" data-close-modal="key-modal">×</button></div>
+      <form id="key-modal-form">
+        <label class="field-group"><span class="field-label" id="key-modal-label">API Key</span><span class="secret-input-wrap"><input id="key-modal-input" type="password" autocomplete="off" required /><button class="text-button reveal-button" type="button" data-reveal="key-modal-input">Show</button></span></label>
+        <div id="key-modal-error" class="form-error hidden"></div>
+        <div class="form-actions right"><button class="secondary-button" type="button" data-close-modal="key-modal">Cancel</button><button id="key-modal-save" class="primary-button" type="submit">Save API Key</button></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Confirm remove modal -->
+  <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+    <div class="modal-backdrop" data-close-modal="confirm-modal"></div>
+    <div class="modal-card small-modal-card">
+      <div class="modal-header"><div><h2 id="confirm-modal-title">Remove Etherscan API key?</h2><p>The scanner will continue to use TinyFish, but verified-source Etherscan enrichment will be disabled until another key is configured.</p></div><button class="icon-button" type="button" data-close-modal="confirm-modal">×</button></div>
+      <div class="form-actions right"><button class="secondary-button" type="button" data-close-modal="confirm-modal">Cancel</button><button id="confirm-remove-etherscan" class="danger-button strong" type="button">Remove Key</button></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script src="./app.js"></script>
+</body>
+</html>

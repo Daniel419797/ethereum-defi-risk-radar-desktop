@@ -1,0 +1,48 @@
+name: Build macOS Unsigned Test Package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos-unsigned:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run build and smoke checks
+        run: npm run check
+
+      - name: Build unsigned universal package for testing only
+        run: npm run dist:mac:unsigned
+
+      - name: Verify packaged CLI runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find release -type d -name 'Ethereum DeFi Risk Radar.app' -print -quit)"
+          EXECUTABLE="$APP_PATH/Contents/MacOS/Ethereum DeFi Risk Radar"
+          LAUNCHER="$APP_PATH/Contents/Resources/cli/launch.cjs"
+          test -f "$LAUNCHER"
+          VERSION="$(ELECTRON_RUN_AS_NODE=1 "$EXECUTABLE" "$LAUNCHER" version | tr -d '\r')"
+          test "$VERSION" = "0.7.0"
+
+      - name: Upload unsigned test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ethereum-defi-risk-radar-macos-unsigned-test-only
+          path: |
+            release/Ethereum-DeFi-Risk-Radar-*.dmg
+            release/Ethereum-DeFi-Risk-Radar-*.zip
+          if-no-files-found: error

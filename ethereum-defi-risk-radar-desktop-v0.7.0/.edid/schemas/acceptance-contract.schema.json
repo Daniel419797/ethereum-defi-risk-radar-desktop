@@ -1,0 +1,18 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://edid.local/schemas/acceptance-contract.schema.json",
+  "title":"EDID acceptance contract",
+  "type":"object",
+  "required":["version","task_id","title","requirements","checks","quality_gates"],
+  "properties":{
+    "version":{"enum":[1,2]},
+    "task_id":{"type":"string","pattern":"^[a-z0-9][a-z0-9._-]*$"},
+    "title":{"type":"string","minLength":1},
+    "contract_revision":{"type":"string","minLength":1},
+    "requirements":{"type":"array","minItems":1,"uniqueItems":true,"items":{"oneOf":[{"type":"string","minLength":1},{"type":"object","required":["id","text"],"properties":{"id":{"type":"string","pattern":"^[A-Z][A-Z0-9]*-[0-9][A-Z0-9.-]*$"},"text":{"type":"string","minLength":1}},"additionalProperties":false}]}},
+    "checks":{"type":"array","minItems":1,"items":{"type":"object","required":["id","type","required","evidence_kind"],"properties":{"id":{"type":"string","pattern":"^[a-z0-9][a-z0-9._-]*$"},"type":{"enum":["command","file","http","adapter","manual"]},"required":{"type":"boolean"},"evidence_kind":{"type":"string","minLength":1},"requirement_ids":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string"}},"executable":{"type":"string"},"arguments":{"type":"array","items":{"type":"string"}},"working_directory":{"type":"string"},"expected_exit_code":{"type":"integer"},"path":{"type":"string"},"contains":{"type":"string"},"url":{"type":"string","format":"uri"},"expected_status":{"type":"integer"},"adapter":{"enum":["browser","deployment","observability","security"]},"instructions":{"type":"string"}},"additionalProperties":false}},
+    "quality_gates":{"type":"object","required":["security","correctness","reliability"],"additionalProperties":{"enum":["required","not_applicable"]}},
+    "quality_gate_checks":{"type":"object","additionalProperties":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string"}}}
+  },
+  "allOf":[{"if":{"properties":{"version":{"const":2}}},"then":{"required":["contract_revision","quality_gate_checks"],"properties":{"requirements":{"items":{"type":"object"}},"checks":{"items":{"required":["requirement_ids"]}}}}]
+}

@@ -1,0 +1,1 @@
+{"version":1,"opt_in":false,"allowed_types":["evaluation-complete","repair-required","approval-required","evidence-expired","deployment-unhealthy","release-ready"],"allowed_destinations":["desktop","email","webhook"],"destinations":[]}

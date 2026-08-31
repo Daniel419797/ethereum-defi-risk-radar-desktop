@@ -1,0 +1,12 @@
+node_modules/
+dist/
+release/
+.env
+reports/*.json
+reports/*.csv
+!reports/.gitkeep
+.DS_Store
+*.p12
+*.p8
+*.cer
+*.mobileprovision

@@ -1,0 +1,8 @@
+> ethereum-defi-risk-radar@0.7.0 test:analysis
+> npm run build && node scripts/analysis-check.mjs
+
+
+> ethereum-defi-risk-radar@0.7.0 build
+> tsc -p tsconfig.json
+
+Analysis checks passed: 3 CFGs, 4 dependencies, 3 storage surfaces, 2 calls, 7 findings, 12 DeFi categories, 8 scenario packs.

@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "adapter": "deployment",
+  "enabled": false,
+  "required_environment": ["EDID_DEPLOYMENT_HEALTH_URL"],
+  "redact_environment": [],
+  "checks": [
+    {
+      "id": "deployed-health",
+      "type": "https",
+      "required": true,
+      "url": "${ENV:EDID_DEPLOYMENT_HEALTH_URL}",
+      "expected_status": 200
+    },
+    {
+      "id": "rollback-procedure",
+      "type": "file",
+      "required": true,
+      "path": "docs/operations.md"
+    },
+    {
+      "id": "migration-evidence",
+      "type": "file",
+      "required": true,
+      "path": ".edid/release/migration-evidence.json"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "project_state": "planned",
+  "phase": "discover",
+  "active_task_id": null,
+  "tasks": [],
+  "evidence": [],
+  "evaluation_runs": [],
+  "repair_packets": [],
+  "last_handoff_at": null,
+  "updated_at": null
+}

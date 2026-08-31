@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "adapter": "security",
+  "enabled": true,
+  "required_environment": [],
+  "redact_environment": [],
+  "checks": [
+    {
+      "id": "security-gate",
+      "type": "command",
+      "required": true,
+      "executable": "powershell",
+      "arguments": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/verify-security.ps1"],
+      "working_directory": ".",
+      "expected_exit_code": 0,
+      "timeout_seconds": 600
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "adapter": "observability",
+  "enabled": false,
+  "required_environment": ["EDID_OBSERVABILITY_URL", "EDID_OBSERVABILITY_TOKEN"],
+  "redact_environment": ["EDID_OBSERVABILITY_TOKEN"],
+  "checks": [
+    {
+      "id": "post-deploy-health-window",
+      "type": "https",
+      "required": true,
+      "url": "${ENV:EDID_OBSERVABILITY_URL}",
+      "headers": { "Authorization": "Bearer ${ENV:EDID_OBSERVABILITY_TOKEN}" },
+      "expected_status": 200
+    }
+  ]
+}

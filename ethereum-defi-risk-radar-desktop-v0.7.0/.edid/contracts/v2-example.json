@@ -1,0 +1,10 @@
+{
+  "version":2,
+  "task_id":"replace-me",
+  "title":"Replace with an accepted task title",
+  "contract_revision":"1",
+  "requirements":[{"id":"REQ-1","text":"Replace with an observable requirement."}],
+  "checks":[{"id":"focused-check","type":"file","required":true,"evidence_kind":"tests","requirement_ids":["REQ-1"],"path":"README.md"}],
+  "quality_gates":{"security":"required","correctness":"required","reliability":"required","performance":"not_applicable","accessibility":"not_applicable","operability":"not_applicable"},
+  "quality_gate_checks":{"security":["focused-check"],"correctness":["focused-check"],"reliability":["focused-check"]}
+}

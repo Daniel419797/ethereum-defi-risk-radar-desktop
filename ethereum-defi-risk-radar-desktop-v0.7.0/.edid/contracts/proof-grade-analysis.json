@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "task_id": "proof-grade-analysis",
+  "title": "Proof-grade contract and protocol vulnerability analysis",
+  "requirements": [
+    { "id": "FR-14", "text": "Build closed CFGs with real branch, join, loop-exit, abrupt-exit, reachability, and dominator facts." },
+    { "id": "FR-15", "text": "Use function-scoped, dominance-aware mitigation analysis for severity, confidence, and suppression decisions." },
+    { "id": "FR-16", "text": "Report every finding cap and dropped count; never silently truncate rules or engine results." },
+    { "id": "FR-17", "text": "Grant EXECUTED only for a parsed counterexample and REPRODUCED only after deterministic replay." },
+    { "id": "FR-18", "text": "Preserve replayable seeds, ordered calls, invariant identifiers, block numbers, and artifact references." },
+    { "id": "FR-19", "text": "Build a protocol-level graph linking contracts, calls, storage roles, assets, and economic components." },
+    { "id": "FR-20", "text": "Consume scenario packs against protocol-derived model state and emit scoped model counterexamples." },
+    { "id": "FR-21", "text": "Support optional Anvil fork replay at a pinned block without requiring a signing key." },
+    { "id": "FR-22", "text": "Allow verified-source targets to use source-only external engines while explicitly explaining project-only engine limits." },
+    { "id": "FR-23", "text": "Expose evidence labels, reachability, mitigations, truncations, protocol graph, and replay metadata in CLI, reports, and desktop." },
+    { "id": "NFR-9", "text": "Fail closed on evidence overstatement, bound all execution and inputs, preserve cancellation, and distinguish model proof from deployed-code proof." }
+  ],
+  "checks": [
+    { "id": "proof-analysis-tests", "type": "command", "required": true, "evidence_kind": "tests", "requirement_ids": ["FR-14", "FR-15", "FR-16", "FR-17", "FR-18", "FR-19", "FR-20", "FR-21", "FR-22", "FR-23", "NFR-9"], "executable": "npm.cmd", "arguments": ["run", "test:proof"], "expected_exit_code": 0 },
+    { "id": "application-check", "type": "command", "required": true, "evidence_kind": "build", "requirement_ids": ["FR-23", "NFR-9"], "executable": "npm.cmd", "arguments": ["run", "check"], "expected_exit_code": 0 },
+    { "id": "security-evidence", "type": "adapter", "adapter": "security", "required": true, "evidence_kind": "security", "requirement_ids": ["FR-17", "FR-18", "FR-21", "FR-22", "NFR-9"] },
+    { "id": "browser-evidence", "type": "adapter", "adapter": "browser", "required": true, "evidence_kind": "accessibility", "requirement_ids": ["FR-23", "NFR-9"] }
+  ],
+  "quality_gates": { "security": "required", "correctness": "required", "reliability": "required", "performance": "required", "accessibility": "required", "operability": "required" },
+  "quality_gate_checks": { "security": ["security-evidence", "proof-analysis-tests"], "correctness": ["proof-analysis-tests"], "reliability": ["proof-analysis-tests", "application-check"], "performance": ["proof-analysis-tests"], "accessibility": ["browser-evidence"], "operability": ["application-check"] }
+}

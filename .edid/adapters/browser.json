@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "adapter": "browser",
+  "enabled": false,
+  "required_environment": [],
+  "redact_environment": [],
+  "checks": [
+    {
+      "id": "critical-user-journeys",
+      "type": "command",
+      "required": true,
+      "executable": "npx.cmd",
+      "arguments": ["playwright", "test"],
+      "working_directory": ".",
+      "expected_exit_code": 0,
+      "timeout_seconds": 600
+    }
+  ]
+}

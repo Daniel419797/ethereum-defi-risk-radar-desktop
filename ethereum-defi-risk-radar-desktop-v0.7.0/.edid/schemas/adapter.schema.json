@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EDID adapter configuration",
+  "type": "object",
+  "required": ["version", "adapter", "enabled", "checks"],
+  "properties": {
+    "version": { "const": 1 },
+    "adapter": { "enum": ["browser", "deployment", "observability", "security"] },
+    "enabled": { "type": "boolean" },
+    "required_environment": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "redact_environment": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "required"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+          "type": { "enum": ["command", "https", "file"] },
+          "required": { "type": "boolean" },
+          "json_assertions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["path", "operator", "value"],
+              "properties": {
+                "path": { "type": "string" },
+                "operator": { "enum": ["eq", "ne", "lt", "lte", "gt", "gte", "contains"] }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

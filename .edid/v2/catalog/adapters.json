@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "installation_policy": {"signature_required":true,"explicit_permissions":true,"network_allowlist_required":true,"compatibility_check_required":true},
+  "adapters": [
+    {"id":"vercel","capabilities":["deployment","health","rollback"],"permissions":["network-allowlisted","write-evidence"]},
+    {"id":"render","capabilities":["deployment","health","migration","rollback"],"permissions":["network-allowlisted","write-evidence"]},
+    {"id":"cloudflare","capabilities":["deployment","health","observability"],"permissions":["network-allowlisted","write-evidence"]},
+    {"id":"aws","capabilities":["deployment","health","observability","backup"],"permissions":["network-allowlisted","read-environment-names","write-evidence"]},
+    {"id":"azure","capabilities":["deployment","health","observability","backup"],"permissions":["network-allowlisted","read-environment-names","write-evidence"]},
+    {"id":"gcp","capabilities":["deployment","health","observability","backup"],"permissions":["network-allowlisted","read-environment-names","write-evidence"]},
+    {"id":"supabase","capabilities":["database","migration","health","backup"],"permissions":["network-allowlisted","read-environment-names","write-evidence"]},
+    {"id":"postgresql","capabilities":["database","migration","integrity","backup-restore"],"permissions":["execute-allowlisted","read-environment-names","write-evidence"]},
+    {"id":"sentry","capabilities":["errors","release-health"],"permissions":["network-allowlisted","write-evidence"]},
+    {"id":"datadog","capabilities":["logs","metrics","traces","alerts"],"permissions":["network-allowlisted","write-evidence"]},
+    {"id":"grafana","capabilities":["logs","metrics","traces","alerts"],"permissions":["network-allowlisted","write-evidence"]}
+  ]
+}

@@ -1,0 +1,3 @@
+adapter-evidence/*
+!adapter-evidence/README.md
+*.tmp-*

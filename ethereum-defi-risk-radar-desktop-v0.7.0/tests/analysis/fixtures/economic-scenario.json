@@ -1,0 +1,27 @@
+{
+  "initial": {
+    "step": 0,
+    "prices": { "ETH": 2000, "USD": 1 },
+    "actors": {
+      "researcher": {
+        "id": "researcher",
+        "balances": { "ETH": 10, "USD": 0 },
+        "debt": {}
+      }
+    },
+    "pools": {
+      "lending-market": {
+        "id": "lending-market",
+        "category": "lending",
+        "reserves": { "ETH": 100, "USD": 100000 },
+        "liabilities": {},
+        "feesAccrued": 0
+      }
+    }
+  },
+  "actions": [
+    { "type": "transfer", "actor": "researcher", "pool": "lending-market", "asset": "ETH", "amount": 2 },
+    { "type": "borrow", "actor": "researcher", "pool": "lending-market", "asset": "USD", "amount": 5000 },
+    { "type": "price_shock", "asset": "ETH", "multiplier": 0.5 }
+  ]
+}

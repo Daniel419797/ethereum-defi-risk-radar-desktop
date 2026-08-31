@@ -1,0 +1,1 @@
+{"version":1,"currency":"USD","budgets":[{"category":"ai","maximum":0,"maximum_regression_percent":0},{"category":"build","maximum":0,"maximum_regression_percent":0},{"category":"hosting","maximum":0,"maximum_regression_percent":0},{"category":"database","maximum":0,"maximum_regression_percent":0},{"category":"api","maximum":0,"maximum_regression_percent":0}],"observations":[]}

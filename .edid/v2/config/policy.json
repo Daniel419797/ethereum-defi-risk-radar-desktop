@@ -1,0 +1,9 @@
+{
+  "version":1,
+  "allowed_roles":["planner","builder","evaluator","repair","release","operator"],
+  "allowed_executables":["go","git","npm","npm.cmd","npx","npx.cmd","pnpm","pnpm.cmd","powershell","pwsh","python","python.exe"],
+  "allowed_hosts":[],
+  "denied_paths":[".env",".git","secrets","credentials"],
+  "required_approvals":{"destructive action":1,"paid action":1,"credential-dependent action":1,"regulated decision":1,"irreversible action":1,"production action":2},
+  "classification_destinations":{"internal":["local"],"confidential":["local","approved-private-service"],"personal":["local","approved-private-service"],"financial":["local","approved-financial-service"],"clinical":["local","approved-clinical-service"],"secret":["secret-store"]}
+}
