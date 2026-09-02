@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "task_id": "protocol-findings-presentation",
+  "title": "Present verified protocols and source findings explicitly in the desktop UI",
+  "requirements": [
+    { "id": "FR-31", "text": "Label Results as verified Ethereum Mainnet protocols rather than generic research candidates once protocol-first discovery is active." },
+    { "id": "FR-32", "text": "Show contract verification and source-analysis state separately from research-priority classification." },
+    { "id": "FR-33", "text": "Surface source-analysis finding counts and high-review findings from each resolved protocol without describing heuristic findings as confirmed vulnerabilities." },
+    { "id": "FR-34", "text": "Provide a direct View Findings action and a candidate-level security summary that explains evidence limitations." },
+    { "id": "NFR-11", "text": "Keep renderer enhancement CSP-compatible, fail-soft, DOM-safe, and compatible with the existing Electron preload bridge." }
+  ],
+  "checks": [
+    { "id": "protocol-ui-regression", "type": "command", "required": true, "evidence_kind": "tests", "requirement_ids": ["FR-31", "FR-32", "FR-33", "FR-34", "NFR-11"], "executable": "node", "arguments": ["scripts/protocol-ui-check.mjs"], "expected_exit_code": 0 },
+    { "id": "protocol-discovery-regression", "type": "command", "required": true, "evidence_kind": "tests", "requirement_ids": ["FR-31", "FR-32", "FR-33"], "executable": "npm.cmd", "arguments": ["run", "test:discovery"], "expected_exit_code": 0 },
+    { "id": "application-check", "type": "command", "required": true, "evidence_kind": "build", "requirement_ids": ["NFR-11"], "executable": "npm.cmd", "arguments": ["run", "check"], "expected_exit_code": 0 }
+  ],
+  "quality_gates": { "security": "required", "correctness": "required", "reliability": "required", "accessibility": "required" },
+  "quality_gate_checks": { "security": ["protocol-ui-regression", "application-check"], "correctness": ["protocol-ui-regression", "protocol-discovery-regression"], "reliability": ["application-check"], "accessibility": ["protocol-ui-regression"] }
+}

@@ -8,6 +8,19 @@ function subscribe(channel, callback) {
   return () => ipcRenderer.removeListener(channel, listener);
 }
 
+function loadProtocolPresentation() {
+  if (!document.head || document.querySelector('script[data-risk-radar-protocol-ui="true"]')) {
+    return;
+  }
+  const script = document.createElement("script");
+  script.src = "./protocol-status.js";
+  script.defer = true;
+  script.dataset.riskRadarProtocolUi = "true";
+  document.head.append(script);
+}
+
+window.addEventListener("DOMContentLoaded", loadProtocolPresentation, { once: true });
+
 contextBridge.exposeInMainWorld("riskRadar", {
   getAppInfo: () => ipcRenderer.invoke("app:get-info"),
   getSettings: () => ipcRenderer.invoke("settings:get"),

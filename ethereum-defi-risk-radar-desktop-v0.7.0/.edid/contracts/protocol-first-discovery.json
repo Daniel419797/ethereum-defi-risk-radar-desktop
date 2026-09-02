@@ -1,0 +1,34 @@
+{
+  "version": 2,
+  "task_id": "protocol-first-discovery",
+  "title": "Protocol-first Ethereum discovery and automatic verified-source handoff",
+  "requirements": [
+    { "id": "FR-D1", "text": "Treat web search results as document leads and never use page hostname/title alone as protocol candidate identity." },
+    { "id": "FR-D2", "text": "Reject academic papers, generic developer-resource lists, and other document-only leads from Results unless a concrete protocol identity can be conservatively resolved." },
+    { "id": "FR-D3", "text": "Promote a protocol candidate only after an Ethereum Mainnet address is resolved and Etherscan returns verified source metadata." },
+    { "id": "FR-D4", "text": "Resolve proxy implementation addresses within the configured Etherscan lookup budget and avoid duplicate or cyclic lookups." },
+    { "id": "FR-D5", "text": "Automatically hand verified source to the existing source analyzer when inspection is enabled and surface contract/source counts on the protocol candidate." },
+    { "id": "FR-D6", "text": "Fail closed when Etherscan is unavailable or the lookup budget is zero: report an explicit progress reason and return no misleading protocol candidates." },
+    { "id": "NFR-D1", "text": "Keep discovery passive and bounded: search plus read-only Etherscan source metadata only, with no RPC probing, transactions, exploit execution, or private-key handling." },
+    { "id": "NFR-D2", "text": "Preserve report address redaction and existing desktop/CLI analysis behavior." }
+  ],
+  "checks": [
+    { "id": "protocol-discovery-regression", "type": "command", "required": true, "evidence_kind": "tests", "requirement_ids": ["FR-D1", "FR-D2", "FR-D3", "FR-D4", "FR-D5", "FR-D6", "NFR-D1"], "executable": "npm.cmd", "arguments": ["run", "test:discovery"], "expected_exit_code": 0 },
+    { "id": "application-check", "type": "command", "required": true, "evidence_kind": "build", "requirement_ids": ["NFR-D2"], "executable": "npm.cmd", "arguments": ["run", "check"], "expected_exit_code": 0 },
+    { "id": "analysis-regression", "type": "command", "required": true, "evidence_kind": "tests", "requirement_ids": ["FR-D5", "NFR-D2"], "executable": "npm.cmd", "arguments": ["run", "test:analysis"], "expected_exit_code": 0 }
+  ],
+  "quality_gates": {
+    "security": "required",
+    "correctness": "required",
+    "reliability": "required",
+    "performance": "required",
+    "maintainability": "required"
+  },
+  "quality_gate_checks": {
+    "security": ["protocol-discovery-regression"],
+    "correctness": ["protocol-discovery-regression", "application-check"],
+    "reliability": ["application-check", "analysis-regression"],
+    "performance": ["protocol-discovery-regression"],
+    "maintainability": ["application-check"]
+  }
+}
