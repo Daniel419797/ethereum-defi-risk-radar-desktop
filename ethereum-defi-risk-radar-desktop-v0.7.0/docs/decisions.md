@@ -78,3 +78,30 @@ authentication and networking risk. Reimplementing analysis in the renderer viol
 
 **Consequences.** Every user-facing backend workflow becomes discoverable in the desktop without
 forking domain logic. The screen is denser, so mobile layout and keyboard behavior are release gates.
+
+## ADR-6 - Promote only contract-resolved protocols from web discovery
+
+**Status.** Accepted, 2026-09-02.
+
+**Context.** Passive discovery keyed candidates by search-result hostname and page title. Academic
+papers, developer-tool lists, audit articles, and other documents could therefore appear in Results
+without a deployed contract, verified source, or automatic source analysis. Etherscan enrichment was
+only attempted when an address happened to be present in the original search snippet.
+
+**Decision.** Treat public search results as leads rather than protocol entities. Infer only a
+conservative protocol identity, reject document-only and generic-resource leads, perform a bounded
+Etherscan-targeted resolution search, and promote a row to Results only when at least one Ethereum
+Mainnet address returns verified source metadata. Proxy implementation resolution consumes the same
+configured Etherscan lookup budget, and verified source is handed directly to the existing source
+analyzer when source inspection is enabled. Without Etherscan verification, no document lead is
+promoted to a protocol candidate.
+
+**Alternatives.** Relabelling the current Results screen as a document-lead list was rejected because
+it would preserve the broken product boundary. Trusting arbitrary addresses mentioned in articles was
+rejected because reports may mention attacker, token, governance, or unrelated addresses. Requiring
+live RPC probing was rejected because passive operation remains a product constraint.
+
+**Consequences.** Results now represent contract-backed protocol research candidates instead of web
+pages. Discovery becomes stricter and may return fewer rows, especially without Etherscan configured.
+The resolver is deliberately bounded and heuristic; protocol aliases and multi-deployment grouping can
+be improved later without weakening the verified-source promotion gate.

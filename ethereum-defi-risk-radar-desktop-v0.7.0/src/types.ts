@@ -42,8 +42,19 @@ export type Evidence = {
   contractReferenceCount: number;
 };
 
+export type ProtocolResolutionEvidence = {
+  sourceUrl: string;
+  sourceTitle: string;
+  sourceHost: string;
+  sourceTrust: SourceTrust;
+  query: string;
+  contractReferenceCount: number;
+};
+
 export type ContractInspectionSummary = {
   contractRefId: string;
+  rootContractRefId?: string;
+  sourceRole?: "DIRECT" | "PROXY" | "IMPLEMENTATION";
   contractName?: string;
   compilerVersion?: string;
   proxy: boolean;
@@ -57,6 +68,7 @@ export type EthereumMetadata = {
   etherscanLookupsAttempted: number;
   verifiedSourceContracts: number;
   proxyContracts: number;
+  proxyImplementationsResolved: number;
   sourceContractsInspected: number;
   sourceFindingCount: number;
   sourceHighReviewCount: number;
@@ -66,6 +78,8 @@ export type EthereumMetadata = {
 
 export type Candidate = {
   id: string;
+  entityKind: "PROTOCOL";
+  resolutionStatus: "CONTRACTS_VERIFIED" | "SOURCE_ANALYZED";
   label: string;
   hostname: string;
   chain: "ethereum";
@@ -76,6 +90,7 @@ export type Candidate = {
   sourceDiversity: number;
   kinds: SignalKind[];
   evidence: Evidence[];
+  resolutionEvidence: ProtocolResolutionEvidence[];
   ethereum: EthereumMetadata;
   classification:
     | "LOW_PUBLIC_SIGNAL"
