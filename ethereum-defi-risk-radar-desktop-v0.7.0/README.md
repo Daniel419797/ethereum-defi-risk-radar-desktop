@@ -55,8 +55,10 @@ The economic model includes all-category scenario packs for oracle/price shocks,
 
 Heuristic and structural rows are **review signals**, not confirmed vulnerabilities.
 `EXECUTED` requires a captured ordered counterexample. `REPRODUCED` requires deterministic
-replay and always states `model scope` or `fork scope`; only a pinned fork replay is evidence
-about deployed bytecode at that block. Finding caps are surfaced and mark analysis partial.
+replay and always states `model scope` or `fork scope`; only a product-authenticated pinned-fork
+replay could establish `CONFIRMED_AT_PINNED_BLOCK`. The current caller-selected loopback Anvil
+command deliberately remains `EXECUTED (model scope)`. Finding caps are surfaced and mark
+analysis partial. Reports explicitly deny exhaustive discovery and blanket exploitability.
 
 ---
 
@@ -72,6 +74,7 @@ The desktop renderer is a multi-screen research workspace:
 - **Source Findings** — severity/category filtering, source file/line and review descriptions.
 - **Public Evidence** — trust heuristic, year, signal type, snippet and safe external-source opening.
 - **Activity** — scanner log and recent-scan summary.
+- **Analysis Lab** — local native/deep project analysis, protocol and generic economic simulation, explicit-confirmation Anvil replay, progress, cancellation and evidence-scoped results.
 - **Settings** — API-key management, scan defaults, source limits, report output and CLI install/repair/removal.
 - **Modals** — connection test, replace API key and Etherscan removal confirmation.
 

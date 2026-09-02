@@ -54,7 +54,7 @@ assert.throws(() => finalizeFinding({ id: "bad", kind: "fuzzing", engine: "echid
 const slither = normalizeExternalFindings("slither", JSON.stringify({ results: [{ check: "x", impact: "High" }] }), 10, 7);
 assert.equal(slither.findings[0].evidenceStrength, "STRUCTURAL");
 assert.equal(slither.findings[0].confidence, "MEDIUM");
-const mythril = normalizeExternalFindings("mythril", JSON.stringify({ issues: [{ swcID: "107", severity: "High", error: "assertion violated", transactions: [{ from: "0x1", to: "0x2", data: "0x" }] }] }), 10, 77);
+const mythril = normalizeExternalFindings("mythril", JSON.stringify({ issues: [{ swcID: "107", severity: "High", error: "assertion violated", transactions: [{ from: "0x1", to: "0x2", data: "0x" }] }] }), 10, 77, true);
 assert.equal(mythril.findings[0].evidenceStrength, "EXECUTED");
 assert.equal(mythril.findings[0].counterexample.seed, 77);
 assert.ok(mythril.findings[0].counterexample.sequence.length);
@@ -72,22 +72,29 @@ assert.equal(modelProof?.evidenceStrength, "REPRODUCED");
 assert.equal(modelProof?.evidenceScope, "model");
 
 const rpcCalls = [];
+const pinnedHash = `0x${"ab".repeat(32)}`;
+const transactionHash = `0x${"cd".repeat(32)}`;
 const rpc = async (method, params) => {
   rpcCalls.push([method, params]);
+  if (method === "web3_clientVersion") return "anvil/v1";
+  if (method === "eth_chainId") return "0x1";
+  if (method === "eth_getBlockByNumber") return { number: "0x64", hash: pinnedHash };
   if (method === "eth_blockNumber") return "0x64";
   if (method === "eth_call") return rpcCalls.filter(item => item[0] === "eth_call").length === 1 ? "0x01" : "0x00";
-  if (method === "eth_sendTransaction") return "0xabc";
+  if (method === "eth_sendTransaction") return transactionHash;
+  if (method === "eth_getTransactionReceipt") return { status: "0x1", transactionHash };
   return true;
 };
-const forkProof = await replayOnPinnedAnvil({ rpcUrl: "http://127.0.0.1:8545", blockNumber: 100, transactions: [{ from: "0x0000000000000000000000000000000000000001", to: "0x0000000000000000000000000000000000000002", data: "0x" }], invariant: { to: "0x0000000000000000000000000000000000000002", data: "0x1234", violation: "changed" }, invariantId: "balance-preserved" }, { rpc });
-assert.equal(forkProof?.evidenceStrength, "REPRODUCED");
-assert.equal(forkProof?.evidenceScope, "fork");
-assert.equal(forkProof?.counterexample.blockNumber, 100);
-await assert.rejects(replayOnPinnedAnvil({ rpcUrl: "https://mainnet.example", blockNumber: 100, transactions: [{ from: "a", to: "b" }], invariant: { to: "b", data: "0x", violation: "changed" }, invariantId: "x" }, { rpc }), /loopback/);
+const forkProof = await replayOnPinnedAnvil({ rpcUrl: "http://127.0.0.1:8545", chainId: 1, blockNumber: 100, blockHash: pinnedHash, transactions: [{ from: "0x0000000000000000000000000000000000000001", to: "0x0000000000000000000000000000000000000002", data: "0x" }], invariant: { to: "0x0000000000000000000000000000000000000002", data: "0x1234", violation: "changed" }, invariantId: "balance-preserved" }, { rpc });
+assert.equal(forkProof?.evidenceStrength, "EXECUTED");
+assert.equal(forkProof?.evidenceScope, "model");
+assert.equal(forkProof?.exploitabilityVerdict, "COUNTEREXAMPLE_NOT_REPLAYED");
+assert.ok(rpcCalls.some(item => item[0] === "evm_snapshot") && rpcCalls.some(item => item[0] === "evm_revert"));
+await assert.rejects(replayOnPinnedAnvil({ rpcUrl: "https://mainnet.example", chainId: 1, blockNumber: 100, blockHash: pinnedHash, transactions: [{ from: "0x0000000000000000000000000000000000000001", to: "0x0000000000000000000000000000000000000002" }], invariant: { to: "0x0000000000000000000000000000000000000002", data: "0x", violation: "changed" }, invariantId: "x" }, { rpc }), /loopback/);
 
 const verified = await runAnalysisPlan({ target: { type: "verified_source", chainId: 1, addressRef: "[contract-address]", sources: [{ name: "Protocol.sol", content: source }] }, engines: ["native", "foundry", "slither"], budget: DEFAULT_ANALYSIS_BUDGET });
 assert.ok(verified.engines.some(item => item.engine === "foundry" && item.unavailableReason === "project-only engine"));
 assert.ok(verified.engines.some(item => item.engine === "slither" && item.unavailableReason === "execution trust not confirmed"));
 assert.ok(verified.protocol?.contracts.length);
 
-console.log(`Proof analysis checks passed: ${report.graphs.length} closed CFGs, ${report.truncations.length} truncation record, ${model.contracts.length} protocol nodes, model and fork scoped reproduction evidence.`);
+console.log(`Proof analysis checks passed: ${report.graphs.length} closed CFGs, ${report.truncations.length} truncation record, ${model.contracts.length} protocol nodes, model reproduction and fail-closed external fork evidence.`);

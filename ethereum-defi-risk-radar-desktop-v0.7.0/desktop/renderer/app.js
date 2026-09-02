@@ -14,6 +14,7 @@
     "dashboard",
     "results",
     "candidate",
+    "analysis",
     "activity",
     "settings"
   ];
@@ -39,6 +40,8 @@
     keyModalProvider: null,
     connection: { tinyfish: "unknown", etherscan: "unknown" },
     analysisCapabilities: [],
+    analysisRunning: false,
+    analysisResult: null,
     cliStatus: null,
     toastTimer: null
   };
@@ -153,7 +156,7 @@
         severity: finding.severity === "CRITICAL" || finding.severity === "HIGH" ? "HIGH_REVIEW" : finding.severity,
         file: finding.primaryLocation?.file || "Structural analysis",
         line: finding.primaryLocation?.line || 0,
-        description: `${finding.description} Evidence: ${evidenceLabel(finding)}; confidence: ${humanize(finding.confidence || "low")}; external reachability: ${finding.reachableFromExternalEntry === undefined ? "unknown" : finding.reachableFromExternalEntry ? "yes" : "no"}.${finding.mitigations?.length ? ` Mitigations: ${finding.mitigations.map(item => humanize(item.kind)).join(", ")}.` : ""}${finding.counterexample?.seed !== undefined ? ` Seed: ${finding.counterexample.seed}.` : ""}${finding.counterexample?.blockNumber !== undefined ? ` Pinned block: ${finding.counterexample.blockNumber}.` : ""}`
+        description: `${finding.description} Evidence: ${evidenceLabel(finding)}; exploitability: ${humanize(finding.exploitabilityVerdict || "unknown")}; confidence: ${humanize(finding.confidence || "low")}; external reachability: ${finding.reachableFromExternalEntry === undefined ? "unknown" : finding.reachableFromExternalEntry ? "yes" : "no"}.${finding.mitigations?.length ? ` Mitigations: ${finding.mitigations.map(item => humanize(item.kind)).join(", ")}.` : ""}${finding.counterexample?.seed !== undefined ? ` Seed: ${finding.counterexample.seed}.` : ""}${finding.counterexample?.blockNumber !== undefined ? ` Pinned block: ${finding.counterexample.blockNumber}.` : ""}`
       }));
       const truncations = (advanced.truncations || []).map(item => ({ kind: "analysis_truncation", severity: "INFO", title: `Results capped for ${item.ruleId}`, description: `${item.dropped} additional matches were omitted after the explicit limit of ${item.limit}. The analysis is partial.`, file: "Analysis completeness", line: 0 }));
       if (inspection.inspection?.truncatedFindingCount > 0) truncations.push({ kind: "analysis_truncation", severity: "INFO", title: "Legacy review signals capped", description: `${inspection.inspection.truncatedFindingCount} additional signals were omitted after the explicit limit of ${inspection.inspection.findingLimit}. The analysis is partial.`, file: "Analysis completeness", line: 0 });
@@ -196,6 +199,7 @@
     if (name === "dashboard") renderDashboard();
     if (name === "results") renderResults();
     if (name === "candidate") renderCandidate();
+    if (name === "analysis") renderAnalysisLab();
     if (name === "activity") renderActivity();
     if (name === "settings") renderSettings();
   }
@@ -812,6 +816,19 @@
     }
   }
 
+  function renderLabCapabilities() {
+    const root = $("analysis-capabilities");
+    if (!root) return;
+    root.replaceChildren();
+    for (const capability of [{ id: "native", available: true, version: "Built in" }, ...state.analysisCapabilities]) {
+      const card = element("div", "capability-card");
+      const copy = element("div");
+      copy.append(element("strong", "", humanize(capability.id)), element("small", "", capability.available ? capability.version || "Available" : capability.reason || "Not installed - optional"));
+      card.append(copy, element("span", `connected-badge ${capability.available ? "" : "neutral"}`.trim(), capability.available ? "Available" : "Optional"));
+      root.append(card);
+    }
+  }
+
   async function refreshAnalysisCapabilities() {
     try {
       state.analysisCapabilities = await api.getAnalysisCapabilities();
@@ -819,6 +836,7 @@
       state.analysisCapabilities = [];
     }
     renderAnalysisCapabilities();
+    renderLabCapabilities();
   }
 
   async function refreshCliStatus() {
@@ -974,6 +992,81 @@
     }
   }
 
+  function setAnalysisRunning(running, message) {
+    state.analysisRunning = running;
+    $("analysis-cancel").classList.toggle("hidden", !running);
+    for (const id of ["analysis-project-run", "protocol-run", "economic-run", "fork-run"]) $(id).disabled = running;
+    if (message) $("analysis-status").textContent = message;
+  }
+
+  function summaryItem(label, value) {
+    const node = element("div", "analysis-summary-item");
+    node.append(element("small", "", label), element("strong", "", value));
+    return node;
+  }
+
+  function resultRow(title, detail) {
+    const node = element("div", "analysis-result-row");
+    node.append(element("strong", "", title), element("small", "", detail));
+    return node;
+  }
+
+  function renderAnalysisResult(kind, result) {
+    state.analysisResult = { kind, result };
+    const root = $("analysis-result-content");
+    root.replaceChildren();
+    $("analysis-result-summary").classList.add("hidden");
+    root.classList.remove("hidden");
+    $("analysis-result-state").textContent = "COMPLETE";
+    const summary = element("div", "analysis-summary-grid");
+    if (kind === "project") {
+      summary.append(summaryItem("State", result.state || "complete"), summaryItem("Findings", result.findings?.length || 0), summaryItem("Contracts", result.protocol?.contracts?.length || 0), summaryItem("Engine runs", result.engines?.length || 0));
+      root.append(summary);
+      for (const finding of (result.findings || []).slice(0, 100)) root.append(resultRow(`${finding.severity} - ${finding.title}`, `${humanize(finding.evidenceStrength)} / ${humanize(finding.exploitabilityVerdict || "unknown")}. ${(finding.limitations || []).join(" ")}`));
+      for (const engine of result.engines || []) root.append(resultRow(`${humanize(engine.engine)}: ${humanize(engine.state)}`, (engine.diagnostics || []).join(" ") || `${engine.findings?.length || 0} finding(s)`));
+    } else if (kind === "protocol") {
+      const findings = (result.results || []).filter(item => item.finding);
+      summary.append(summaryItem("Contracts", result.protocol?.contracts?.length || 0), summaryItem("Call edges", result.protocol?.calls?.length || 0), summaryItem("Scenarios", result.results?.length || 0), summaryItem("Model violations", findings.length));
+      root.append(summary);
+      for (const item of result.results || []) root.append(resultRow(item.scenarioId, item.finding ? `${item.finding.title}. ${item.finding.limitations.join(" ")}` : item.reason || humanize(item.state)));
+    } else if (kind === "economic") {
+      const failed = (result.invariants || []).filter(item => !item.passed);
+      summary.append(summaryItem("Steps", result.finalState?.step || 0), summaryItem("Invariants", result.invariants?.length || 0), summaryItem("Failed", failed.length), summaryItem("Pools", Object.keys(result.protocolSolvency || {}).length));
+      root.append(summary);
+      for (const item of result.invariants || []) root.append(resultRow(`${item.passed ? "PASS" : "FAIL"} - ${item.id}`, item.description));
+    } else {
+      summary.append(summaryItem("Observed violation", result.observedViolation ? "Yes" : "No"), summaryItem("Evidence", result.finding?.evidenceStrength || "None"), summaryItem("Scope", result.finding?.evidenceScope || "None"), summaryItem("Exploitability", result.finding?.exploitabilityVerdict || "UNKNOWN"));
+      root.append(summary);
+      if (result.finding) root.append(resultRow(result.finding.title, `${result.finding.description} ${result.finding.limitations.join(" ")}`));
+      else root.append(resultRow("No requested invariant violation observed", "The replay completed without producing a vulnerability finding."));
+    }
+  }
+
+  function renderAnalysisLab() {
+    renderLabCapabilities();
+    if (state.analysisResult) renderAnalysisResult(state.analysisResult.kind, state.analysisResult.result);
+  }
+
+  async function chooseInto(inputId, chooser) {
+    const selected = await chooser();
+    if (selected) $(inputId).value = selected;
+  }
+
+  async function runLab(kind, action) {
+    setAnalysisRunning(true, `${humanize(kind)} is running...`);
+    $("analysis-result-state").textContent = "RUNNING";
+    try {
+      const result = await action();
+      renderAnalysisResult(kind, result);
+      $("analysis-status").textContent = `${humanize(kind)} completed. Review evidence scope and limitations below.`;
+      showToast(`${humanize(kind)} completed.`, "success");
+    } catch (error) {
+      $("analysis-result-state").textContent = "FAILED";
+      $("analysis-status").textContent = error?.message || String(error);
+      showToast(error?.message || String(error), "error");
+    } finally { setAnalysisRunning(false); }
+  }
+
   function bindEvents() {
     document.querySelectorAll(".nav-button").forEach(button => {
       button.addEventListener("click", () => showScreen(button.dataset.screen));
@@ -1066,6 +1159,20 @@
     $("findings-kind-filter").addEventListener("change", () => state.selectedCandidate && renderCandidateFindings(state.selectedCandidate));
     $("findings-sort").addEventListener("change", () => state.selectedCandidate && renderCandidateFindings(state.selectedCandidate));
 
+    $("analysis-project-choose").addEventListener("click", () => chooseInto("analysis-project-path", () => api.chooseAnalysisProject()));
+    $("protocol-project-choose").addEventListener("click", () => chooseInto("protocol-project-path", () => api.chooseAnalysisProject()));
+    $("protocol-observations-choose").addEventListener("click", () => chooseInto("protocol-observations-path", () => api.chooseAnalysisJson()));
+    $("economic-scenario-choose").addEventListener("click", () => chooseInto("economic-scenario-path", () => api.chooseAnalysisJson()));
+    $("fork-spec-choose").addEventListener("click", () => chooseInto("fork-spec-path", () => api.chooseAnalysisJson()));
+    $("analysis-project-run").addEventListener("click", () => runLab("project", () => {
+      const engines = [...document.querySelectorAll(".engine-picker input:checked")].map(node => node.value);
+      return api.runProjectAnalysis({ projectPath: $("analysis-project-path").value, engines, trusted: $("analysis-project-trust").checked, timeoutSeconds: Number($("analysis-timeout").value), seed: Number($("analysis-seed").value) });
+    }));
+    $("protocol-run").addEventListener("click", () => runLab("protocol", () => api.simulateProtocol({ projectPath: $("protocol-project-path").value, observationsPath: $("protocol-observations-path").value, seed: Number($("protocol-seed").value) })));
+    $("economic-run").addEventListener("click", () => runLab("economic", () => api.simulateEconomic({ scenarioPath: $("economic-scenario-path").value, maxSteps: Number($("economic-max-steps").value) })));
+    $("fork-run").addEventListener("click", () => runLab("fork replay", () => api.replayFork({ specPath: $("fork-spec-path").value, confirmed: $("fork-confirm").checked })));
+    $("analysis-cancel").addEventListener("click", async () => { await api.cancelAnalysis(); $("analysis-status").textContent = "Cancellation requested..."; });
+
     $("activity-clear-log").addEventListener("click", () => {
       state.logs = [];
       renderDashboardLog();
@@ -1098,7 +1205,7 @@
 
     api.onNavigate(payload => {
       const view = payload?.view;
-      if (["dashboard", "results", "activity", "settings"].includes(view)) showScreen(view);
+      if (["dashboard", "results", "analysis", "activity", "settings"].includes(view)) showScreen(view);
     });
 
     api.onScanProgress(payload => updateProgress(payload));
@@ -1122,6 +1229,9 @@
       addLog(`ERROR: ${payload.message || "Unknown scan error"}`);
       showToast(payload.message || "Scan failed.", "error");
     });
+    api.onAnalysisState(payload => setAnalysisRunning(Boolean(payload?.running), payload?.running ? `${payload.label || "Analysis"} is running...` : undefined));
+    api.onAnalysisProgress(payload => { if (payload?.message) $("analysis-status").textContent = payload.message; });
+    api.onAnalysisError(payload => { if (payload?.message) $("analysis-status").textContent = payload.message; });
   }
 
   async function initialize() {

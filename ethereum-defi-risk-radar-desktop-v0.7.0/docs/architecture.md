@@ -105,3 +105,20 @@ Scores are 1–5; hard-gate failure rejects a candidate.
 - Verify with golden source fixtures, fake-runner failure tests, deterministic economic
   conservation/solvency tests, build/smoke/redaction/security gates, and desktop browser checks.
 
+## Desktop Analysis Lab integration
+
+The desktop remains one sandboxed Electron deployable. A new Analysis Lab presentation module
+calls narrowly scoped preload methods; the main process owns dialogs, selected-path authorization,
+schema validation, execution trust, cancellation, and orchestration. Renderer code never receives
+filesystem or process primitives. Normalized `AnalysisRunReport`, protocol-scenario results, and
+external-replay findings are returned without adding a second backend or duplicating analysis logic.
+
+The selected design is one screen with three workflow panels (project analysis, protocol simulation,
+fork replay). Separate windows were rejected because they duplicate state and error handling; a local
+HTTP API was rejected because it adds authentication and network attack surface. The design is
+reversible: each IPC method and panel can be removed independently while CLI behavior remains intact.
+
+Hard gates: only user-selected paths are accepted, deep execution requires an explicit trust checkbox,
+replay requires explicit confirmation and never accepts a private key, payloads retain existing byte and
+runtime bounds, and all evidence labels come from the shared analysis model. Reassess this boundary if
+remote/shared execution, unattended scans, or product-owned Anvil processes are introduced.

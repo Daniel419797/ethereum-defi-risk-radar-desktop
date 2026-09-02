@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { scanLegacyEthereumDefi } from "../dist/scanner.js";
 import { writeReports } from "../dist/report.js";
+import { inspectVerifiedSource } from "../dist/sourceAnalyzer.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const rendererDir = path.join(root, "desktop", "renderer");
@@ -100,6 +101,7 @@ if (events.at(-1)?.overallPercent !== 95) throw new Error("Scanner progress even
 
 const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "defi-risk-radar-smoke-"));
 const address = "0x1111111111111111111111111111111111111111";
+const smokeInspection = inspectVerifiedSource("pragma solidity ^0.8.20; contract Smoke { function unsafe(address target) external { target.call(\"\"); } }");
 const candidate = {
   id: "smoke",
   label: `Contract ${address}`,
@@ -132,17 +134,21 @@ const candidate = {
     etherscanLookupsAttempted: 1,
     verifiedSourceContracts: 1,
     proxyContracts: 0,
-    sourceContractsInspected: 0,
-    sourceFindingCount: 0,
-    sourceHighReviewCount: 0,
-    advancedFindingCount: 0,
-    sourceInspections: []
+    sourceContractsInspected: 1,
+    sourceFindingCount: smokeInspection.findings.length,
+    sourceHighReviewCount: smokeInspection.highReviewCount,
+    advancedFindingCount: smokeInspection.advancedAnalysis.findings.length,
+    sourceInspections: [{ contractRefId: "contract-ref-1", contractName: "Smoke", proxy: false, inspection: smokeInspection }]
   }
 };
 const reportPaths = await writeReports({ candidates: [candidate], outputDir: tempDir, startYear: 2020, endYear: 2020 });
 const reportText = await fs.readFile(reportPaths.jsonPath, "utf8");
+const reportCsv = await fs.readFile(reportPaths.csvPath, "utf8");
 if (reportText.includes(address)) throw new Error("Contract address leaked into generated report.");
 if (!reportText.includes("[contract-address]")) throw new Error("Report redaction marker missing.");
+if (!reportText.includes('"automaticallyDiscoversEveryPossibleDefiVulnerability": false') || !reportText.includes('"findingRows"')) throw new Error("Truthful guarantee metadata or detailed JSON finding rows missing.");
+if (!reportCsv.includes('"exploitabilityVerdict"') || !reportCsv.includes('"counterexampleSequence"') || !reportCsv.includes('"droppedCount"')) throw new Error("Detailed CSV finding schema missing.");
+if (!reportCsv.includes('"analysis_finding"') || !reportCsv.includes('"UNKNOWN"')) throw new Error("Detailed CSV finding rows missing.");
 await fs.rm(tempDir, { recursive: true, force: true });
 
 console.log("Smoke checks passed: renderer/preload structure, bundled CLI integration, macOS distribution config, scanner progress, and report redaction.");

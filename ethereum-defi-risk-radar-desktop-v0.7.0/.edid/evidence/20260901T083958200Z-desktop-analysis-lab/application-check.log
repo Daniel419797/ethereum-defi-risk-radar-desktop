@@ -1,0 +1,8 @@
+> ethereum-defi-risk-radar@0.7.0 check
+> npm run build && node scripts/smoke-check.mjs
+
+
+> ethereum-defi-risk-radar@0.7.0 build
+> tsc -p tsconfig.json
+
+Smoke checks passed: renderer/preload structure, bundled CLI integration, macOS distribution config, scanner progress, and report redaction.

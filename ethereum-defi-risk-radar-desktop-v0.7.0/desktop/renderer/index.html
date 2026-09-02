@@ -35,6 +35,9 @@
         <button class="nav-button" type="button" data-screen="results">
           <span class="nav-glyph">▥</span><span>Results</span>
         </button>
+        <button class="nav-button" type="button" data-screen="analysis">
+          <span class="nav-glyph">LAB</span><span>Analysis Lab</span>
+        </button>
         <button class="nav-button" type="button" data-screen="activity">
           <span class="nav-glyph">⌁</span><span>Activity</span>
         </button>
@@ -348,6 +351,20 @@
             </article>
           </aside>
         </div>
+      </section>
+
+      <!-- Analysis Lab -->
+      <section id="screen-analysis" class="screen hidden" aria-labelledby="analysis-title">
+        <header class="screen-header"><div><h1 id="analysis-title">Analysis Lab</h1><p>Bounded local analysis, model simulation, and explicitly confirmed external replay.</p></div><button id="analysis-cancel" class="outline-button hidden" type="button">Cancel active run</button></header>
+        <div id="analysis-capabilities" class="capability-grid analysis-capabilities" aria-label="Analysis engine capabilities"></div>
+        <div id="analysis-status" class="notice info" role="status">Select a workflow and its required local inputs.</div>
+        <div class="analysis-workflow-grid">
+          <article class="panel analysis-workflow-card"><h2>Local project analysis</h2><p>Native analysis is offline. Optional engines may invoke project compiler or test hooks.</p><div class="file-picker-row"><input id="analysis-project-path" type="text" readonly placeholder="Select Foundry or Hardhat project" /><button id="analysis-project-choose" class="secondary-button" type="button">Choose project</button></div><fieldset class="engine-picker"><legend>Engines</legend><label><input type="checkbox" value="native" checked disabled /> Native</label><label><input type="checkbox" value="slither" /> Slither</label><label><input type="checkbox" value="mythril" /> Mythril</label><label><input type="checkbox" value="foundry" /> Foundry</label><label><input type="checkbox" value="echidna" /> Echidna</label></fieldset><div class="analysis-options"><label>Timeout seconds<input id="analysis-timeout" type="number" min="1" max="3600" value="120" /></label><label>Seed<input id="analysis-seed" type="number" value="1" /></label></div><label class="trust-confirm"><input id="analysis-project-trust" type="checkbox" /> I trust this project to run selected compiler/test tools on this computer.</label><button id="analysis-project-run" class="primary-button" type="button">Run project analysis</button></article>
+          <article class="panel analysis-workflow-card"><h2>Protocol attack simulation</h2><p>Build a source-linked protocol model and run scenario packs using explicit observations.</p><div class="file-picker-row"><input id="protocol-project-path" type="text" readonly placeholder="Select project" /><button id="protocol-project-choose" class="secondary-button" type="button">Choose project</button></div><div class="file-picker-row"><input id="protocol-observations-path" type="text" readonly placeholder="Select observations JSON" /><button id="protocol-observations-choose" class="secondary-button" type="button">Choose JSON</button></div><label>Replay seed<input id="protocol-seed" type="number" value="1" /></label><button id="protocol-run" class="primary-button" type="button">Run protocol simulation</button></article>
+          <article class="panel analysis-workflow-card"><h2>Economic scenario simulation</h2><p>Run actor, pool, balance, debt, price, and solvency actions from bounded JSON.</p><div class="file-picker-row"><input id="economic-scenario-path" type="text" readonly placeholder="Select scenario JSON" /><button id="economic-scenario-choose" class="secondary-button" type="button">Choose JSON</button></div><label>Maximum steps<input id="economic-max-steps" type="number" min="1" max="100000" value="10000" /></label><button id="economic-run" class="primary-button" type="button">Run economic simulation</button></article>
+          <article class="panel analysis-workflow-card danger-zone"><h2>External Anvil replay</h2><p>Replay against caller-selected loopback Anvil. No private key is accepted and this cannot claim authenticated fork confirmation.</p><div class="file-picker-row"><input id="fork-spec-path" type="text" readonly placeholder="Select replay specification JSON" /><button id="fork-spec-choose" class="secondary-button" type="button">Choose JSON</button></div><label class="trust-confirm"><input id="fork-confirm" type="checkbox" /> I confirm transactions may be submitted only to the specification's loopback Anvil instance.</label><button id="fork-run" class="primary-button" type="button">Run external replay</button></article>
+        </div>
+        <article class="panel analysis-result-panel"><div class="panel-title-row"><h2>Latest Analysis Lab result</h2><span id="analysis-result-state" class="phase-badge">EMPTY</span></div><div id="analysis-result-summary" class="empty-state"><strong>No Analysis Lab result yet</strong><span>Completed output will appear here with evidence scope and limitations.</span></div><div id="analysis-result-content" class="analysis-result-content hidden"></div></article>
       </section>
 
       <!-- Settings -->

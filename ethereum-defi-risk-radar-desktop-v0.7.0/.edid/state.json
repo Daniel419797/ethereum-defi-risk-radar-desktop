@@ -1,8 +1,8 @@
 {
     "version":  1,
     "project_state":  "locally_verified",
-    "phase":  "specify",
-    "active_task_id":  "proof-grade-analysis",
+    "phase":  "release",
+    "active_task_id":  "desktop-analysis-lab",
     "tasks":  [
                   {
                       "id":  "expanded-analysis-engine",
@@ -34,7 +34,7 @@
                       "scope":  "product",
                       "risk":  "critical",
                       "mode":  "high_assurance",
-                      "status":  "draft",
+                      "status":  "complete",
                       "depends_on":  [
 
                                      ],
@@ -50,7 +50,31 @@
                                            "credentials"
                                        ],
                       "created_at":  "2026-08-31T12:19:31.2215579Z",
-                      "updated_at":  "2026-08-31T12:19:31.2310918Z"
+                      "updated_at":  "2026-08-31T18:44:52.7071866Z"
+                  },
+                  {
+                      "id":  "desktop-analysis-lab",
+                      "title":  "End-to-end desktop analysis capability integration",
+                      "scope":  "product",
+                      "risk":  "critical",
+                      "mode":  "high_assurance",
+                      "status":  "complete",
+                      "depends_on":  [
+
+                                     ],
+                      "contract_path":  ".edid/contracts/desktop-analysis-lab.json",
+                      "independent_evaluation_required":  true,
+                      "allowed_paths":  [
+
+                                        ],
+                      "denied_paths":  [
+                                           ".env",
+                                           ".git",
+                                           "secrets",
+                                           "credentials"
+                                       ],
+                      "created_at":  "2026-09-01T03:17:21.5188967Z",
+                      "updated_at":  "2026-09-01T08:42:20.0571634Z"
                   }
               ],
     "evidence":  [
@@ -93,6 +117,96 @@
                          "summary":  "Exit code 0; expected 0",
                          "artifact_path":  ".edid/evidence/20260831T121525564Z-expanded-analysis-engine/browser-evidence.log",
                          "recorded_at":  "2026-08-31T12:16:12.2181400Z"
+                     },
+                     {
+                         "id":  "3d63e6e7775949259ebeb7ee2a46214d",
+                         "task_id":  "proof-grade-analysis",
+                         "kind":  "tests",
+                         "source":  "harness:20260831T184319592Z-proof-grade-analysis/proof-analysis-tests",
+                         "result":  "pass",
+                         "summary":  "Exit code 0; expected 0",
+                         "artifact_path":  ".edid/evidence/20260831T184319592Z-proof-grade-analysis/proof-analysis-tests.log",
+                         "recorded_at":  "2026-08-31T18:43:31.3953968Z"
+                     },
+                     {
+                         "id":  "db4bd51e9beb46199782d6dfa1b06738",
+                         "task_id":  "proof-grade-analysis",
+                         "kind":  "build",
+                         "source":  "harness:20260831T184319592Z-proof-grade-analysis/application-check",
+                         "result":  "pass",
+                         "summary":  "Exit code 0; expected 0",
+                         "artifact_path":  ".edid/evidence/20260831T184319592Z-proof-grade-analysis/application-check.log",
+                         "recorded_at":  "2026-08-31T18:43:42.2128946Z"
+                     },
+                     {
+                         "id":  "c302007912174499940640806868d24b",
+                         "task_id":  "proof-grade-analysis",
+                         "kind":  "security",
+                         "source":  "harness:20260831T184319592Z-proof-grade-analysis/security-evidence",
+                         "result":  "pass",
+                         "summary":  "Exit code 0; expected 0",
+                         "artifact_path":  ".edid/evidence/20260831T184319592Z-proof-grade-analysis/security-evidence.log",
+                         "recorded_at":  "2026-08-31T18:44:18.4088838Z"
+                     },
+                     {
+                         "id":  "025bc9b541d64f89bb2d6cdc639589af",
+                         "task_id":  "proof-grade-analysis",
+                         "kind":  "accessibility",
+                         "source":  "harness:20260831T184319592Z-proof-grade-analysis/browser-evidence",
+                         "result":  "pass",
+                         "summary":  "Exit code 0; expected 0",
+                         "artifact_path":  ".edid/evidence/20260831T184319592Z-proof-grade-analysis/browser-evidence.log",
+                         "recorded_at":  "2026-08-31T18:44:35.4294131Z"
+                     },
+                     {
+                         "id":  "cc40b99f11c440d79430d35f81e5cabd",
+                         "task_id":  "desktop-analysis-lab",
+                         "kind":  "tests",
+                         "source":  "harness:20260901T083958200Z-desktop-analysis-lab/desktop-analysis-integration",
+                         "result":  "pass",
+                         "summary":  "Exit code 0; expected 0",
+                         "artifact_path":  ".edid/evidence/20260901T083958200Z-desktop-analysis-lab/desktop-analysis-integration.log",
+                         "recorded_at":  "2026-09-01T08:40:18.1106652Z"
+                     },
+                     {
+                         "id":  "4357827364ae45acbe618d3fd1c124c0",
+                         "task_id":  "desktop-analysis-lab",
+                         "kind":  "tests",
+                         "source":  "harness:20260901T083958200Z-desktop-analysis-lab/proof-regression",
+                         "result":  "pass",
+                         "summary":  "Exit code 0; expected 0",
+                         "artifact_path":  ".edid/evidence/20260901T083958200Z-desktop-analysis-lab/proof-regression.log",
+                         "recorded_at":  "2026-09-01T08:40:29.6687917Z"
+                     },
+                     {
+                         "id":  "542e8e596fdd4ccfbd25bc0ecd3ab2d4",
+                         "task_id":  "desktop-analysis-lab",
+                         "kind":  "build",
+                         "source":  "harness:20260901T083958200Z-desktop-analysis-lab/application-check",
+                         "result":  "pass",
+                         "summary":  "Exit code 0; expected 0",
+                         "artifact_path":  ".edid/evidence/20260901T083958200Z-desktop-analysis-lab/application-check.log",
+                         "recorded_at":  "2026-09-01T08:40:37.7854880Z"
+                     },
+                     {
+                         "id":  "a9061c6460f7498890741990f314ffea",
+                         "task_id":  "desktop-analysis-lab",
+                         "kind":  "security",
+                         "source":  "harness:20260901T083958200Z-desktop-analysis-lab/security-evidence",
+                         "result":  "pass",
+                         "summary":  "Exit code 0; expected 0",
+                         "artifact_path":  ".edid/evidence/20260901T083958200Z-desktop-analysis-lab/security-evidence.log",
+                         "recorded_at":  "2026-09-01T08:41:43.3925162Z"
+                     },
+                     {
+                         "id":  "63040e9819b14c4ea4ab7ebac14870e9",
+                         "task_id":  "desktop-analysis-lab",
+                         "kind":  "accessibility",
+                         "source":  "harness:20260901T083958200Z-desktop-analysis-lab/browser-evidence",
+                         "result":  "pass",
+                         "summary":  "Exit code 0; expected 0",
+                         "artifact_path":  ".edid/evidence/20260901T083958200Z-desktop-analysis-lab/browser-evidence.log",
+                         "recorded_at":  "2026-09-01T08:42:02.9558299Z"
                      }
                  ],
     "evaluation_runs":  [
@@ -142,11 +256,114 @@
                                                 }
                                             ],
                                 "evaluated_at":  "2026-08-31T12:16:12.2261426Z"
+                            },
+                            {
+                                "id":  "20260831T184319592Z-proof-grade-analysis",
+                                "task_id":  "proof-grade-analysis",
+                                "builder_id":  "codex-primary",
+                                "evaluator_id":  "proof-security-audit-retry",
+                                "independent":  true,
+                                "verdict":  "pass",
+                                "results":  [
+                                                {
+                                                    "check_id":  "proof-analysis-tests",
+                                                    "type":  "command",
+                                                    "required":  true,
+                                                    "evidence_kind":  "tests",
+                                                    "result":  "pass",
+                                                    "summary":  "Exit code 0; expected 0",
+                                                    "artifact_path":  ".edid/evidence/20260831T184319592Z-proof-grade-analysis/proof-analysis-tests.log"
+                                                },
+                                                {
+                                                    "check_id":  "application-check",
+                                                    "type":  "command",
+                                                    "required":  true,
+                                                    "evidence_kind":  "build",
+                                                    "result":  "pass",
+                                                    "summary":  "Exit code 0; expected 0",
+                                                    "artifact_path":  ".edid/evidence/20260831T184319592Z-proof-grade-analysis/application-check.log"
+                                                },
+                                                {
+                                                    "check_id":  "security-evidence",
+                                                    "type":  "adapter",
+                                                    "required":  true,
+                                                    "evidence_kind":  "security",
+                                                    "result":  "pass",
+                                                    "summary":  "Exit code 0; expected 0",
+                                                    "artifact_path":  ".edid/evidence/20260831T184319592Z-proof-grade-analysis/security-evidence.log"
+                                                },
+                                                {
+                                                    "check_id":  "browser-evidence",
+                                                    "type":  "adapter",
+                                                    "required":  true,
+                                                    "evidence_kind":  "accessibility",
+                                                    "result":  "pass",
+                                                    "summary":  "Exit code 0; expected 0",
+                                                    "artifact_path":  ".edid/evidence/20260831T184319592Z-proof-grade-analysis/browser-evidence.log"
+                                                }
+                                            ],
+                                "evaluated_at":  "2026-08-31T18:44:35.4419368Z"
+                            },
+                            {
+                                "id":  "20260901T083958200Z-desktop-analysis-lab",
+                                "task_id":  "desktop-analysis-lab",
+                                "builder_id":  "codex-primary",
+                                "evaluator_id":  "desktop-analysis-contract-suite",
+                                "independent":  true,
+                                "verdict":  "pass",
+                                "results":  [
+                                                {
+                                                    "check_id":  "desktop-analysis-integration",
+                                                    "type":  "command",
+                                                    "required":  true,
+                                                    "evidence_kind":  "tests",
+                                                    "result":  "pass",
+                                                    "summary":  "Exit code 0; expected 0",
+                                                    "artifact_path":  ".edid/evidence/20260901T083958200Z-desktop-analysis-lab/desktop-analysis-integration.log"
+                                                },
+                                                {
+                                                    "check_id":  "proof-regression",
+                                                    "type":  "command",
+                                                    "required":  true,
+                                                    "evidence_kind":  "tests",
+                                                    "result":  "pass",
+                                                    "summary":  "Exit code 0; expected 0",
+                                                    "artifact_path":  ".edid/evidence/20260901T083958200Z-desktop-analysis-lab/proof-regression.log"
+                                                },
+                                                {
+                                                    "check_id":  "application-check",
+                                                    "type":  "command",
+                                                    "required":  true,
+                                                    "evidence_kind":  "build",
+                                                    "result":  "pass",
+                                                    "summary":  "Exit code 0; expected 0",
+                                                    "artifact_path":  ".edid/evidence/20260901T083958200Z-desktop-analysis-lab/application-check.log"
+                                                },
+                                                {
+                                                    "check_id":  "security-evidence",
+                                                    "type":  "adapter",
+                                                    "required":  true,
+                                                    "evidence_kind":  "security",
+                                                    "result":  "pass",
+                                                    "summary":  "Exit code 0; expected 0",
+                                                    "artifact_path":  ".edid/evidence/20260901T083958200Z-desktop-analysis-lab/security-evidence.log"
+                                                },
+                                                {
+                                                    "check_id":  "browser-evidence",
+                                                    "type":  "adapter",
+                                                    "required":  true,
+                                                    "evidence_kind":  "accessibility",
+                                                    "result":  "pass",
+                                                    "summary":  "Exit code 0; expected 0",
+                                                    "artifact_path":  ".edid/evidence/20260901T083958200Z-desktop-analysis-lab/browser-evidence.log"
+                                                }
+                                            ],
+                                "evaluated_at":  "2026-09-01T08:42:02.9771437Z"
                             }
                         ],
     "repair_packets":  [
 
                        ],
-    "last_handoff_at":  "2026-08-31T12:16:49.1974429Z",
-    "updated_at":  "2026-08-31T12:19:31.2400933Z"
+    "last_handoff_at":  "2026-09-01T08:42:22.6876194Z",
+    "updated_at":  "2026-09-01T08:42:22.6920492Z"
 }

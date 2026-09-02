@@ -32,6 +32,13 @@ window.riskRadar = {
     { id: "python", available: true, version: "Python 3.14.5" },
     { id: "docker", available: true, version: "Docker 29.2.1" }
   ]),
+  chooseAnalysisProject: async () => "C:\\fixtures\\demo-project",
+  chooseAnalysisJson: async () => "C:\\fixtures\\scenario.json",
+  runProjectAnalysis: async () => ({ state: "complete", findings: [{ severity: "HIGH", title: "External call review", evidenceStrength: "STRUCTURAL", exploitabilityVerdict: "UNKNOWN", limitations: ["Manual validation required."] }], protocol: { contracts: [{ id: "Pool" }], calls: [] }, engines: [] }),
+  simulateEconomic: async () => ({ finalState: { step: 1 }, invariants: [{ id: "solvency", passed: true, description: "Pool remains solvent." }], protocolSolvency: { Pool: 100 } }),
+  simulateProtocol: async () => ({ protocol: { contracts: [{ id: "Pool" }], calls: [] }, results: [{ scenarioId: "oracle-shock", state: "skipped", reason: "No oracle model" }] }),
+  replayFork: async () => ({ observedViolation: false }),
+  cancelAnalysis: async () => ({ cancelled: true }),
   getLastScan: async () => null,
   saveSettings: async payload => ({ ...(await window.riskRadar.getSettings()), ...payload }),
   chooseOutputDir: async () => null,
@@ -44,7 +51,8 @@ window.riskRadar = {
   installCli: async () => ({ installed: true, pathConfigured: true, packaged: true }),
   uninstallCli: async () => ({ installed: false, pathConfigured: false, packaged: true }),
   onScanProgress: () => () => {}, onScanLog: () => () => {}, onScanComplete: () => () => {},
-  onScanError: () => () => {}, onScanState: () => () => {}, onNavigate: () => () => {}
+  onScanError: () => () => {}, onScanState: () => () => {}, onNavigate: () => () => {},
+  onAnalysisState: () => () => {}, onAnalysisProgress: () => () => {}, onAnalysisError: () => () => {}
 };
 `;
 

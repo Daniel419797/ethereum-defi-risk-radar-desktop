@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "task_id": "desktop-analysis-lab",
+  "title": "End-to-end desktop analysis capability integration",
+  "requirements": [
+    { "id": "FR-24", "text": "Maintain a source-backed capability matrix mapping every user-facing backend workflow to desktop, CLI, and verification evidence." },
+    { "id": "FR-25", "text": "Provide an Analysis Lab desktop screen with local project selection, native/deep engine selection, explicit execution trust, budgets, progress, cancellation, and normalized results." },
+    { "id": "FR-26", "text": "Provide protocol scenario simulation from a selected local project and observations JSON with seed, skipped reasons, model-scope findings, and result details." },
+    { "id": "FR-26A", "text": "Provide generic economic scenario simulation from selected JSON with bounded steps, invariant outcomes, balances, and solvency results." },
+    { "id": "FR-27", "text": "Provide external Anvil replay from a selected replay JSON with explicit confirmation, capability checks, fail-closed evidence labels, and visible counterexample or no-violation result." },
+    { "id": "FR-28", "text": "Use validated, least-privilege IPC contracts and user-selected filesystem paths; do not accept private keys or silently execute untrusted projects." },
+    { "id": "FR-29", "text": "Expose loading, empty, partial, unavailable, cancelled, failed, and complete states with accessible responsive controls and recovery guidance." },
+    { "id": "FR-30", "text": "Preserve passive discovery, settings, reports, candidate workspaces, and CLI behavior without regression." },
+    { "id": "NFR-10", "text": "Keep analysis bounded, cancellable where supported, evidence-honest, renderer-sandboxed, and usable without optional external tools." }
+  ],
+  "checks": [
+    { "id": "desktop-analysis-integration", "type": "command", "required": true, "evidence_kind": "tests", "requirement_ids": ["FR-24", "FR-25", "FR-26", "FR-26A", "FR-27", "FR-28", "FR-29", "FR-30", "NFR-10"], "executable": "npm.cmd", "arguments": ["run", "test:desktop-analysis"], "expected_exit_code": 0 },
+    { "id": "proof-regression", "type": "command", "required": true, "evidence_kind": "tests", "requirement_ids": ["FR-25", "FR-26", "FR-27", "NFR-10"], "executable": "npm.cmd", "arguments": ["run", "test:proof"], "expected_exit_code": 0 },
+    { "id": "application-check", "type": "command", "required": true, "evidence_kind": "build", "requirement_ids": ["FR-30", "NFR-10"], "executable": "npm.cmd", "arguments": ["run", "check"], "expected_exit_code": 0 },
+    { "id": "security-evidence", "type": "adapter", "adapter": "security", "required": true, "evidence_kind": "security", "requirement_ids": ["FR-28", "NFR-10"] },
+    { "id": "browser-evidence", "type": "adapter", "adapter": "browser", "required": true, "evidence_kind": "accessibility", "requirement_ids": ["FR-25", "FR-26", "FR-27", "FR-29"] }
+  ],
+  "quality_gates": { "security": "required", "correctness": "required", "reliability": "required", "performance": "required", "accessibility": "required", "operability": "required" },
+  "quality_gate_checks": { "security": ["security-evidence", "desktop-analysis-integration"], "correctness": ["desktop-analysis-integration", "proof-regression"], "reliability": ["desktop-analysis-integration", "application-check"], "performance": ["proof-regression"], "accessibility": ["browser-evidence"], "operability": ["application-check"] }
+}

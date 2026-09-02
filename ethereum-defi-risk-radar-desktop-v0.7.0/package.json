@@ -15,6 +15,7 @@
     "check": "npm run build && node scripts/smoke-check.mjs",
     "test:analysis": "npm run build && node scripts/analysis-check.mjs",
     "test:proof": "npm run build && node scripts/proof-analysis-check.mjs",
+    "test:desktop-analysis": "npm run build && node scripts/desktop-analysis-check.mjs",
     "dist:mac": "npm run build && node scripts/check-macos-release.mjs && electron-builder --mac dmg zip --universal",
     "dist:mac:x64": "npm run build && node scripts/check-macos-release.mjs && electron-builder --mac dmg zip --x64",
     "dist:mac:arm64": "npm run build && node scripts/check-macos-release.mjs && electron-builder --mac dmg zip --arm64",

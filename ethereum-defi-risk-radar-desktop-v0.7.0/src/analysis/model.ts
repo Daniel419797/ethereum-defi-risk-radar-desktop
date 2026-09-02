@@ -31,6 +31,7 @@ export type AnalysisKind =
 export type EvidenceStrength = "HEURISTIC" | "STRUCTURAL" | "EXECUTED" | "REPRODUCED";
 export type AnalysisConfidence = "LOW" | "MEDIUM" | "HIGH";
 export type AnalysisSeverity = "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+export type ExploitabilityVerdict = "UNKNOWN" | "COUNTEREXAMPLE_NOT_REPLAYED" | "MODEL_VIOLATION_ONLY" | "CONFIRMED_AT_PINNED_BLOCK";
 
 /**
  * Scope of a REPRODUCED claim. `model` means a counterexample replayed deterministically
@@ -142,6 +143,8 @@ export type AnalysisFinding = {
   reachableFromExternalEntry?: boolean;
   /** Engines that independently reported the same kind at the same location. */
   correlatedEngines?: AnalysisEngineId[];
+  /** Per-finding verdict. This is never a protocol-wide guarantee. */
+  exploitabilityVerdict?: ExploitabilityVerdict;
 };
 
 export type GraphNode = {

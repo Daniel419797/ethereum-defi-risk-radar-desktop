@@ -206,11 +206,16 @@ selected timeout and output limits; missing tools return an optional/unavailable
 scenario packs using explicit observed balances, liabilities, and prices. A failed invariant
 is `REPRODUCED (model scope)`, never a claim about deployed bytecode.
 
-`replay-fork` connects only to loopback Anvil JSON-RPC, verifies the pinned block, impersonates
-recorded senders without a private key, replays ordered transactions, and rechecks the declared
-invariant. It emits `REPRODUCED (fork scope)` only when the violation is observed. Anvil and a
-separately started pinned fork remain optional.
+`replay-fork` accepts only an unauthenticated `http://127.0.0.1` Anvil endpoint and requires
+`chainId: 1`, a trusted canonical `blockHash`, a matching `blockNumber`, canonical transaction
+fields, and an explicit invariant (`changed`, `zero`, or `transaction_reverted` with a
+`transactionIndex`). It snapshots state, uses explicit block tags, validates receipts, and
+restores the snapshot. Because this endpoint is caller-selected rather than a product-owned
+process, successful replay is intentionally `EXECUTED (model scope)` and cannot earn
+`CONFIRMED_AT_PINNED_BLOCK`. No private key is accepted or required.
 
 Evidence is fail-closed: a passing Forge test or analyzer row without a counterexample remains
 structural. Seeds, ordered calls, invariant IDs, block numbers, scopes, and truncation counts
-are retained in JSON output.
+are retained in JSON output. JSON includes a flat `findingRows` collection, while CSV emits
+one detailed row per finding with evidence, scope, exploitability verdict, path, mitigation,
+counterexample, seed, block, limitation, and truncation fields.

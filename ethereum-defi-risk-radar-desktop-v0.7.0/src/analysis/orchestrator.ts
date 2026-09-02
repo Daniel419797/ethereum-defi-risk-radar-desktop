@@ -113,13 +113,19 @@ export async function runAnalysisPlan(plan: AnalysisPlan, signal?: AbortSignal):
       try {
         const written: string[] = [];
         for (const [index, source] of sources.entries()) {
-          const safeName = path.basename(source.name).replace(/[^A-Za-z0-9_.-]/g, "_") || `Contract${index}.sol`;
+          const baseName = path.basename(source.name).replace(/[^A-Za-z0-9_.-]/g, "_") || `Contract${index}.sol`;
+          const safeName = `${String(index).padStart(4, "0")}-${baseName}`;
           const target = path.join(tempRoot, safeName.endsWith(".sol") ? safeName : `${safeName}.sol`); await fs.writeFile(target, source.content, "utf8"); written.push(target);
         }
         for (const engine of externalEngines) {
           const capability = capabilities.find(item => item.id === engine);
           if (!capability?.available) { const now = new Date().toISOString(); engines.push({ engine, state: "unavailable", startedAt: now, finishedAt: now, durationMs: 0, findings: [], diagnostics: [capability?.reason ?? `${engine} is not installed`], truncated: false }); continue; }
-          engines.push(await runExternalAdapter({ engine, targetPath: written[0] ?? tempRoot, budget: plan.budget, signal }));
+          const run = await runExternalAdapter({ engine, targetPath: written[0] ?? tempRoot, budget: plan.budget, signal });
+          if (written.length > 1) {
+            run.state = "partial";
+            run.diagnostics.push(`Verified-source bundle contains ${written.length} files; this engine entrypoint analyzed only the first collision-resistant staged source. Multi-file execution evidence is not complete.`);
+          }
+          engines.push(run);
         }
       } finally {
         const resolvedTemp = path.resolve(tempRoot); const tempPrefix = path.resolve(os.tmpdir()) + path.sep;

@@ -6,7 +6,8 @@ export async function fetchJsonBounded<T>(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("HTTP request timed out")), opts.timeoutMs);
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
+    const signal = init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal;
+    const response = await fetch(url, { ...init, signal });
     const declaredLength = Number(response.headers.get("content-length"));
     if (Number.isFinite(declaredLength) && declaredLength > opts.maxBytes) {
       controller.abort();

@@ -162,7 +162,10 @@ export function finalizeFinding(draft: FindingDraft): AnalysisFinding {
   const finding: AnalysisFinding = {
     ...draft,
     confidence: clampConfidence(draft.confidence ?? maxConfidenceFor(strength), strength),
-    limitations
+    limitations,
+    exploitabilityVerdict: strength === "REPRODUCED"
+      ? scope === "fork" ? "CONFIRMED_AT_PINNED_BLOCK" : "MODEL_VIOLATION_ONLY"
+      : strength === "EXECUTED" ? "COUNTEREXAMPLE_NOT_REPLAYED" : "UNKNOWN"
   };
   if (scope) finding.evidenceScope = scope;
   else delete finding.evidenceScope;
@@ -219,6 +222,13 @@ export function assertEvidenceInvariant(findings: readonly AnalysisFinding[]): v
       !(finding.evidenceScope ?? finding.counterexample?.scope)
     ) {
       throw new EvidenceInvariantError(`Finding ${finding.id} claims REPRODUCED without a scope.`);
+    }
+    const scope = finding.evidenceScope ?? finding.counterexample?.scope;
+    const expectedVerdict = finding.evidenceStrength === "REPRODUCED"
+      ? scope === "fork" ? "CONFIRMED_AT_PINNED_BLOCK" : "MODEL_VIOLATION_ONLY"
+      : finding.evidenceStrength === "EXECUTED" ? "COUNTEREXAMPLE_NOT_REPLAYED" : "UNKNOWN";
+    if (finding.exploitabilityVerdict !== expectedVerdict) {
+      throw new EvidenceInvariantError(`Finding ${finding.id} has exploitability verdict ${finding.exploitabilityVerdict ?? "missing"}; expected ${expectedVerdict}.`);
     }
   }
 }

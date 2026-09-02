@@ -61,3 +61,20 @@ an explicit product constraint.
 **Consequences.** Claims become mechanically conservative and replayable. The model and fork
 backends remain replaceable; reassess when compiler-semantic IR or a sandboxed remote runner
 becomes available.
+
+## ADR-5 - Present advanced workflows through one Analysis Lab
+
+**Status.** Accepted, 2026-09-01.
+
+**Context.** Local-project analysis, protocol simulation, and external Anvil replay existed as
+backend/CLI workflows but had no desktop entry points, leaving the product boundary incomplete.
+
+**Decision.** Add one responsive Analysis Lab screen and narrow IPC methods backed by the same
+orchestrator used by the CLI. The main process owns user-selected paths, validation, trust and
+confirmation gates, progress, cancellation, and normalized results.
+
+**Alternatives.** Separate windows increase state duplication. A localhost API adds needless
+authentication and networking risk. Reimplementing analysis in the renderer violates sandboxing.
+
+**Consequences.** Every user-facing backend workflow becomes discoverable in the desktop without
+forking domain logic. The screen is denser, so mobile layout and keyboard behavior are release gates.

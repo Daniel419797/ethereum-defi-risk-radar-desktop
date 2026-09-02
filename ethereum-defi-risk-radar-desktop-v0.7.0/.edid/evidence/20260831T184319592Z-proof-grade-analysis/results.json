@@ -1,0 +1,47 @@
+{
+    "id":  "20260831T184319592Z-proof-grade-analysis",
+    "task_id":  "proof-grade-analysis",
+    "builder_id":  "codex-primary",
+    "evaluator_id":  "proof-security-audit-retry",
+    "independent":  true,
+    "verdict":  "pass",
+    "results":  [
+                    {
+                        "check_id":  "proof-analysis-tests",
+                        "type":  "command",
+                        "required":  true,
+                        "evidence_kind":  "tests",
+                        "result":  "pass",
+                        "summary":  "Exit code 0; expected 0",
+                        "artifact_path":  ".edid/evidence/20260831T184319592Z-proof-grade-analysis/proof-analysis-tests.log"
+                    },
+                    {
+                        "check_id":  "application-check",
+                        "type":  "command",
+                        "required":  true,
+                        "evidence_kind":  "build",
+                        "result":  "pass",
+                        "summary":  "Exit code 0; expected 0",
+                        "artifact_path":  ".edid/evidence/20260831T184319592Z-proof-grade-analysis/application-check.log"
+                    },
+                    {
+                        "check_id":  "security-evidence",
+                        "type":  "adapter",
+                        "required":  true,
+                        "evidence_kind":  "security",
+                        "result":  "pass",
+                        "summary":  "Exit code 0; expected 0",
+                        "artifact_path":  ".edid/evidence/20260831T184319592Z-proof-grade-analysis/security-evidence.log"
+                    },
+                    {
+                        "check_id":  "browser-evidence",
+                        "type":  "adapter",
+                        "required":  true,
+                        "evidence_kind":  "accessibility",
+                        "result":  "pass",
+                        "summary":  "Exit code 0; expected 0",
+                        "artifact_path":  ".edid/evidence/20260831T184319592Z-proof-grade-analysis/browser-evidence.log"
+                    }
+                ],
+    "evaluated_at":  "2026-08-31T18:44:35.4419368Z"
+}

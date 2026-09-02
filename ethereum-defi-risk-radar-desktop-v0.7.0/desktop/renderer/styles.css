@@ -377,6 +377,28 @@ select { cursor:pointer; }
 .settings-footer { display:flex; justify-content:space-between; gap:14px; margin-top:18px; }
 .settings-help { color:#8fa0b1; font-size:11px; margin:-4px 0 12px; max-width:850px; }
 .capability-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.analysis-capabilities { margin-bottom:14px; }
+.analysis-workflow-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin:16px 0; }
+.analysis-workflow-card { display:flex; flex-direction:column; gap:12px; min-width:0; padding:18px; }
+.analysis-workflow-card > p { color:#8fa0b1; line-height:1.5; margin:0; }
+.analysis-workflow-card > button { align-self:flex-start; }
+.analysis-workflow-card label { color:#aebbc8; font-size:11px; }
+.analysis-workflow-card label > input[type="number"] { display:block; width:100%; margin-top:6px; }
+.file-picker-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+.file-picker-row input { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.engine-picker { border:1px solid var(--border-soft); border-radius:8px; padding:10px 12px; display:flex; flex-wrap:wrap; gap:10px 16px; }
+.engine-picker legend { color:#7f91a4; padding:0 5px; font-size:10px; text-transform:uppercase; }
+.engine-picker label, .trust-confirm { display:flex; align-items:flex-start; gap:7px; line-height:1.4; }
+.analysis-options { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.danger-zone { border-color:#57323b; }
+.analysis-result-panel { padding:18px; }
+.analysis-result-content { display:grid; gap:10px; margin-top:14px; }
+.analysis-summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.analysis-summary-item { border:1px solid var(--border-soft); border-radius:7px; padding:10px; background:#091827; }
+.analysis-summary-item small { display:block; color:#74879a; }
+.analysis-summary-item strong { display:block; margin-top:4px; color:#dbe8f5; overflow-wrap:anywhere; }
+.analysis-result-row { border:1px solid var(--border-soft); border-radius:7px; padding:11px; background:#091827; }
+.analysis-result-row small { color:#8193a5; display:block; margin-top:5px; overflow-wrap:anywhere; }
 .capability-card { display:flex; align-items:center; justify-content:space-between; gap:10px; min-width:0; border:1px solid var(--border-soft); border-radius:8px; background:#091827; padding:11px 12px; }
 .capability-card > div { display:grid; gap:3px; min-width:0; }
 .capability-card strong { color:#e2ebf4; font-size:12px; }
@@ -440,16 +462,24 @@ select { cursor:pointer; }
   .app-shell { display:block; min-height:100vh; }
   .sidebar { position:sticky; top:0; height:auto; padding:8px 10px; border-right:0; border-bottom:1px solid #1d3146; }
   .brand { display:none; }
-  .primary-nav { grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; }
+  .primary-nav { grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; }
   .nav-button { justify-content:center; gap:5px; min-width:0; padding:9px 4px; font-size:10px; }
   .nav-glyph { width:auto; font-size:14px; }
   .sidebar-spacer, .defensive-card { display:none; }
   .workspace { padding:18px 12px 32px; }
+  .connection-strip, .scan-controls, .dashboard-bottom-grid, .progress-layout { grid-template-columns:1fr; }
+  .connection-strip, .scan-controls, .dashboard-bottom-grid { gap:12px; }
+  .progress-card, .live-activity-card { min-width:0; padding:15px 12px; }
+  .log-row { grid-template-columns:66px minmax(0,1fr); gap:8px; }
+  .log-row > span { min-width:0; overflow-wrap:anywhere; }
   .screen-header { display:block; margin-bottom:16px; }
   .screen-header h1, .candidate-header h1, .candidate-title-row h1 { font-size:24px; }
   .screen-header p { font-size:12px; }
   .settings-section { padding:15px 12px; }
   .settings-grid.four, .settings-grid.two, .capability-grid { grid-template-columns:1fr; }
+  .analysis-workflow-grid, .analysis-summary-grid, .analysis-options { grid-template-columns:1fr; }
+  .file-picker-row { grid-template-columns:1fr; }
+  .analysis-workflow-card > button, .file-picker-row button { width:100%; }
   .connection-setting-row { grid-template-columns:38px minmax(0,1fr); gap:10px; padding:12px 10px; }
   .connection-setting-row > .inline-actions, .connection-setting-row > button { grid-column:1/-1; width:100%; }
   .provider-icon { width:36px; height:36px; }

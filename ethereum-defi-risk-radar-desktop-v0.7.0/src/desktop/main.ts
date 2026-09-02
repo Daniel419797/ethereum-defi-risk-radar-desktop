@@ -17,11 +17,12 @@ import { scanLegacyEthereumDefi } from "../scanner.js";
 import { writeReports } from "../report.js";
 import { detectAnalysisCapabilities } from "../analysis/capabilities.js";
 import { runAnalysisPlan } from "../analysis/orchestrator.js";
-import { DEFAULT_ANALYSIS_BUDGET } from "../analysis/model.js";
+import { DEFAULT_ANALYSIS_BUDGET, type AnalysisEngineId } from "../analysis/model.js";
 import { simulateEconomicScenario, type EconomicAction, type EconomicState } from "../analysis/economic/simulator.js";
 import { ECONOMIC_SCENARIO_PACKS } from "../analysis/economic/scenarios.js";
 import { runProtocolScenarios, type ProtocolObservations } from "../analysis/protocol.js";
 import { replayOnPinnedAnvil, type ForkReplaySpec } from "../analysis/reproduction.js";
+import { analyzeProjectFromDesktop, replayForkFromDesktop, simulateEconomicFromDesktop, simulateProtocolFromDesktop } from "./analysisLab.js";
 import type { Candidate } from "../types.js";
 
 const STORE_VERSION = 1;
@@ -78,6 +79,8 @@ interface ScanResult {
 let mainWindow: BrowserWindow | null = null;
 let scanRunning = false;
 let lastScan: ScanResult | null = null;
+let analysisController: AbortController | null = null;
+const authorizedAnalysisPaths = new Set<string>();
 
 function clampInt(value: unknown, fallback: number, min: number, max: number) {
   const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
@@ -248,6 +251,43 @@ async function runtimeConfig() {
 function send(channel: string, payload: unknown) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, payload);
+  }
+}
+
+function requireAuthorizedAnalysisPath(value: unknown, kind: "directory" | "json") {
+  if (typeof value !== "string") throw new Error("A selected path is required");
+  const resolved = path.resolve(value);
+  if (!authorizedAnalysisPaths.has(resolved)) throw new Error("Select this path through the desktop picker before running analysis");
+  if (kind === "json" && path.extname(resolved).toLowerCase() !== ".json") throw new Error("A JSON file is required");
+  return resolved;
+}
+
+async function chooseAnalysisPath(kind: "directory" | "json") {
+  const response = await dialog.showOpenDialog(mainWindow!, kind === "directory"
+    ? { title: "Select Solidity project", properties: ["openDirectory"] }
+    : { title: "Select JSON input", properties: ["openFile"], filters: [{ name: "JSON", extensions: ["json"] }] });
+  if (response.canceled || !response.filePaths[0]) return null;
+  const resolved = path.resolve(response.filePaths[0]);
+  authorizedAnalysisPaths.add(resolved);
+  return resolved;
+}
+
+async function withAnalysisRun<T>(label: string, work: (signal: AbortSignal) => Promise<T>) {
+  if (analysisController) throw new Error("Another Analysis Lab workflow is already running");
+  analysisController = new AbortController();
+  send("analysis:state", { running: true, label });
+  send("analysis:progress", { phase: "starting", message: `${label} started` });
+  try {
+    const result = await work(analysisController.signal);
+    send("analysis:progress", { phase: "complete", message: `${label} completed` });
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    send("analysis:error", { message });
+    throw error;
+  } finally {
+    analysisController = null;
+    send("analysis:state", { running: false, label });
   }
 }
 
@@ -1170,6 +1210,36 @@ function registerIpc() {
   });
   ipcMain.handle("connections:test", () => testConnections());
   ipcMain.handle("analysis:capabilities", () => detectAnalysisCapabilities());
+  ipcMain.handle("analysis:choose-project", () => chooseAnalysisPath("directory"));
+  ipcMain.handle("analysis:choose-json", () => chooseAnalysisPath("json"));
+  ipcMain.handle("analysis:run-project", async (_event: unknown, request: { projectPath?: string; engines?: AnalysisEngineId[]; trusted?: boolean; timeoutSeconds?: number; seed?: number }) => {
+    const projectPath = requireAuthorizedAnalysisPath(request?.projectPath, "directory");
+    const externalRequested = Array.isArray(request?.engines) && request.engines.some(engine => engine !== "native");
+    if (externalRequested) {
+      if (request.trusted !== true) throw new Error("External analyzers require explicit project trust");
+      const confirmation = await dialog.showMessageBox(mainWindow!, { type: "warning", buttons: ["Cancel", "Run trusted tools"], defaultId: 0, cancelId: 0, noLink: true, title: "Run project-controlled tools?", message: "External analyzers may invoke compiler or test hooks from this project.", detail: `Only continue if you trust the selected project:\n${projectPath}` });
+      if (confirmation.response !== 1) throw new Error("Trusted project execution was cancelled");
+    }
+    return withAnalysisRun("Project analysis", signal => analyzeProjectFromDesktop({ ...request, projectPath }, signal));
+  });
+  ipcMain.handle("analysis:simulate-economic", (_event: unknown, request: { scenarioPath?: string; maxSteps?: number }) => {
+    const scenarioPath = requireAuthorizedAnalysisPath(request?.scenarioPath, "json");
+    return withAnalysisRun("Economic simulation", () => simulateEconomicFromDesktop({ ...request, scenarioPath }));
+  });
+  ipcMain.handle("analysis:simulate-protocol", (_event: unknown, request: { projectPath?: string; observationsPath?: string; seed?: number }) => {
+    const projectPath = requireAuthorizedAnalysisPath(request?.projectPath, "directory");
+    const observationsPath = requireAuthorizedAnalysisPath(request?.observationsPath, "json");
+    return withAnalysisRun("Protocol simulation", signal => simulateProtocolFromDesktop({ ...request, projectPath, observationsPath }, signal));
+  });
+  ipcMain.handle("analysis:replay-fork", (_event: unknown, request: { specPath?: string; confirmed?: boolean }) => {
+    const specPath = requireAuthorizedAnalysisPath(request?.specPath, "json");
+    return withAnalysisRun("External Anvil replay", signal => replayForkFromDesktop({ ...request, specPath }, signal));
+  });
+  ipcMain.handle("analysis:cancel", () => {
+    if (!analysisController) return { cancelled: false };
+    analysisController.abort(new Error("Analysis cancelled by user"));
+    return { cancelled: true };
+  });
   ipcMain.handle("scan:start", (_event: unknown, request: ScanRequest) => startScan(request));
   ipcMain.handle("scan:last", () => lastScan);
   ipcMain.handle("scan:export-summary", () => exportScanSummary());

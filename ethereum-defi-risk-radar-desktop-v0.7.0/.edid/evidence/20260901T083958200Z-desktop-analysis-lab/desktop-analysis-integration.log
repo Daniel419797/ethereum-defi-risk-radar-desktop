@@ -1,0 +1,8 @@
+> ethereum-defi-risk-radar@0.7.0 test:desktop-analysis
+> npm run build && node scripts/desktop-analysis-check.mjs
+
+
+> ethereum-defi-risk-radar@0.7.0 build
+> tsc -p tsconfig.json
+
+Desktop Analysis Lab checks passed: four workflows, bridge/IPC/UI contracts, trust gate, native analysis, economic and protocol execution.

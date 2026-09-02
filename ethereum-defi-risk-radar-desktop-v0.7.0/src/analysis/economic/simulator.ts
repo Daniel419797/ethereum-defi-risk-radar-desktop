@@ -30,6 +30,16 @@ function valueOf(amounts: Record<string, number>, prices: Record<string, number>
 
 export function simulateEconomicScenario(initial: EconomicState, actions: EconomicAction[], maxSteps = 10_000): EconomicSimulation {
   if (actions.length > maxSteps) throw new Error(`Simulation exceeds ${maxSteps} steps`);
+  for (const [asset, price] of Object.entries(initial.prices)) finiteNonNegative(price, `price ${asset}`);
+  for (const actor of Object.values(initial.actors)) {
+    for (const [asset, amount] of Object.entries(actor.balances)) finiteNonNegative(amount, `actor balance ${asset}`);
+    for (const [asset, amount] of Object.entries(actor.debt)) finiteNonNegative(amount, `actor debt ${asset}`);
+  }
+  for (const pool of Object.values(initial.pools)) {
+    finiteNonNegative(pool.feesAccrued, `pool fees ${pool.id}`);
+    for (const [asset, amount] of Object.entries(pool.reserves)) finiteNonNegative(amount, `pool reserve ${asset}`);
+    for (const [asset, amount] of Object.entries(pool.liabilities)) finiteNonNegative(amount, `pool liability ${asset}`);
+  }
   const state = cloneState(initial);
   for (const action of actions) {
     state.step += 1;
@@ -79,4 +89,3 @@ export function simulateEconomicScenario(initial: EconomicState, actions: Econom
   ];
   return { finalState: state, invariants, actorNetWorth, protocolSolvency };
 }
-

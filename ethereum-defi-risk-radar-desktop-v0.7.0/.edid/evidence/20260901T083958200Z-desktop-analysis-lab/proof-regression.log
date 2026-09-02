@@ -1,0 +1,8 @@
+> ethereum-defi-risk-radar@0.7.0 test:proof
+> npm run build && node scripts/proof-analysis-check.mjs
+
+
+> ethereum-defi-risk-radar@0.7.0 build
+> tsc -p tsconfig.json
+
+Proof analysis checks passed: 6 closed CFGs, 1 truncation record, 3 protocol nodes, model reproduction and fail-closed external fork evidence.
