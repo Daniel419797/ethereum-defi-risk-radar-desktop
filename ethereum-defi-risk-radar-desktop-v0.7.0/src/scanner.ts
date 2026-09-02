@@ -167,6 +167,18 @@ function hostnameOf(urlString: string) {
   }
 }
 
+function isHttpsUrl(urlString: string) {
+  try {
+    return new URL(urlString).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isTrustedEtherscanUrl(urlString: string) {
+  return isHttpsUrl(urlString) && hostnameOf(urlString) === "etherscan.io";
+}
+
 function sourceTrust(host: string): SourceTrust {
   if (HIGH_TRUST_HOSTS.has(host)) return "HIGH";
   if (MEDIUM_TRUST_SUFFIXES.some(suffix => host.endsWith(suffix))) {
@@ -364,7 +376,7 @@ async function resolveProtocolAddresses(opts: {
 
       for (const result of response.results ?? []) {
         const url = normalizeText(result.url);
-        if (!url.startsWith("http")) continue;
+        if (!isTrustedEtherscanUrl(url)) continue;
         const title = normalizeText(result.title) || hostnameOf(url);
         const rawText = `${title}\n${normalizeText(result.snippet)}\n${url}`;
         const found = extractAddresses(rawText);
@@ -455,7 +467,7 @@ export async function scanLegacyEthereumDefi(opts: {
 
         for (const result of response.results ?? []) {
           const url = normalizeText(result.url);
-          if (!url.startsWith("http")) continue;
+          if (!isHttpsUrl(url)) continue;
 
           const identity = inferProtocolIdentity(result);
           if (!identity?.key) continue;

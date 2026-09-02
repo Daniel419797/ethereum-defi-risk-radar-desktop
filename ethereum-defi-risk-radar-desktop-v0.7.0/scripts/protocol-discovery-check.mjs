@@ -15,6 +15,18 @@ const mockClient = {
       return {
         results: [
           {
+            title: "Untrusted insecure Etherscan-shaped result",
+            url: "http://etherscan.io/address/0x3333333333333333333333333333333333333333",
+            snippet: "Ethereum contract 0x3333333333333333333333333333333333333333",
+            site_name: "Etherscan"
+          },
+          {
+            title: "Spoofed Etherscan-shaped result",
+            url: "https://etherscan.io.evil.example/address/0x4444444444444444444444444444444444444444",
+            snippet: "Ethereum contract 0x4444444444444444444444444444444444444444",
+            site_name: "Not Etherscan"
+          },
+          {
             title: "Euler Finance Mainnet contract",
             url: `https://etherscan.io/address/${proxyAddress}`,
             snippet: `Verified Ethereum contract ${proxyAddress}`,
@@ -98,7 +110,7 @@ const candidate = candidates[0];
 if (candidate.entityKind !== "PROTOCOL") throw new Error("Resolved result must be a protocol entity.");
 if (candidate.label !== "Euler Finance") throw new Error(`Unexpected protocol label: ${candidate.label}`);
 if (candidate.resolutionStatus !== "SOURCE_ANALYZED") throw new Error(`Unexpected resolution status: ${candidate.resolutionStatus}`);
-if (candidate.ethereum.contractReferencesObserved !== 1) throw new Error("Protocol deployment reference was not resolved.");
+if (candidate.ethereum.contractReferencesObserved !== 1) throw new Error("Protocol deployment reference was not resolved or untrusted Etherscan-shaped URLs were accepted.");
 if (candidate.ethereum.verifiedSourceContracts !== 2) throw new Error("Proxy and implementation verified-source metadata were not both captured.");
 if (candidate.ethereum.proxyImplementationsResolved !== 1) throw new Error("Proxy implementation resolution did not occur.");
 if (candidate.ethereum.sourceContractsInspected !== 1) throw new Error("Implementation source was not inspected.");
@@ -132,4 +144,4 @@ if (!/not configured/i.test(noEtherscanProgress.at(-1)?.message ?? "")) {
   throw new Error("Missing explicit no-Etherscan promotion warning.");
 }
 
-console.log("Protocol discovery checks passed: document rejection, protocol resolution, Etherscan verification, proxy implementation handoff, source analysis, and fail-closed promotion.");
+console.log("Protocol discovery checks passed: document rejection, protocol resolution, HTTPS Etherscan trust, verified-source validation, proxy implementation handoff, source analysis, and fail-closed promotion.");
