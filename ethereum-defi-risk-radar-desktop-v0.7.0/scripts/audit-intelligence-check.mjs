@@ -55,8 +55,12 @@ try {
   await fs.rm(temp, { recursive: true, force: true });
 }
 
-const evaluation = evaluateAuditCorpus(records);
-assert.ok(evaluation.trainRecords > 0 && evaluation.benchmarkRecords > 0, "deterministic train/benchmark split should be usable");
+// Holdout mechanics are tested with an explicit split so the fixture can never become
+// degenerate merely because its SHA buckets happen to land on one side.
+const evaluationRecords = records.map((record, index) => ({ ...record, split: index < 8 ? "train" : "benchmark" }));
+const evaluation = evaluateAuditCorpus(evaluationRecords);
+assert.equal(evaluation.trainRecords, 8);
+assert.equal(evaluation.benchmarkRecords, 4);
 assert.ok(evaluation.categoryAccuracy >= 0 && evaluation.categoryAccuracy <= 1);
 assert.ok(evaluation.limitations.some(value => /not.*vulnerability-detection accuracy/i.test(value)));
 
