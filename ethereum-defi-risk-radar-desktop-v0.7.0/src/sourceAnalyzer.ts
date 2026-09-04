@@ -125,8 +125,12 @@ function legacyVersionFinding(files: SourceFile[]): SourceFinding[] {
 
 function historicalSuffix(item: HistoricalAuditIntelligence["findings"][number] | undefined) {
   if (!item?.analogues.length) return "";
-  const matches = item.analogues.slice(0, 3).map(match => `${match.title} [${match.severity}, ${Math.round(match.similarity * 100)}% similar]`).join("; ");
-  const remediation = item.commonRemediations[0] ? ` Common historical remediation: ${item.commonRemediations[0]}` : "";
+  const matches = item.analogues
+    .slice(0, 3)
+    .map(match => `${match.title.slice(0, 160)} [${match.severity}, ${Math.round(match.similarity * 100)}% similar]`)
+    .join("; ");
+  const remediationText = item.commonRemediations[0]?.slice(0, 400);
+  const remediation = remediationText ? ` Common historical remediation: ${remediationText}` : "";
   return ` Historical Audit Intelligence: category ${item.predictedCategory} (${Math.round(item.categoryConfidence * 100)}% model confidence), historical review-priority context ${item.historicalRiskScore}/100, analogues: ${matches}.${remediation} This historical context supports review only and does not prove current exploitability.`;
 }
 
