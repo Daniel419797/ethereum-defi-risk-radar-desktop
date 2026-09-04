@@ -2,8 +2,8 @@ import crypto from "node:crypto";
 import type { AuditCategory, AuditSeverity, CleanAuditRecord } from "./model.js";
 
 const PLACEHOLDERS = new Set([
-  "", "n/a", "na", "none", "no data", "no recommendation", "no recommendation.",
-  "no poc", "no poc.", "not provided", "not available", "unknown", "-"
+  "", "n/a", "na", "none", "no data", "no recommendation",
+  "no poc", "not provided", "not available", "unknown", "-"
 ]);
 
 const CATEGORY_RULES: Array<{ category: AuditCategory; patterns: RegExp[]; tags: string[] }> = [
@@ -40,7 +40,7 @@ export function cleanAuditTitle(value: unknown) {
     .replace(/\s+Submitted by\s+.+$/i, "")
     .replace(/\s+Reported by\s+.+$/i, "")
     .replace(/\s+also found by\s+.+$/i, "")
-    .replace(/^\s*[`*_#]+|[`*_#]+\s*$/g, "")
+    .replace(/(?:^\s*[`*_#]+)|(?:[`*_#]+\s*$)/g, "")
     .trim()
     .slice(0, 400);
 }
@@ -53,7 +53,7 @@ export function normalizeSeverity(value: unknown, raw?: unknown): AuditSeverity 
   if (/\blow\b|low risk/.test(text)) return "LOW";
   if (/informational|\binfo\b/.test(text)) return "INFORMATIONAL";
   if (/gas optimization|gas optimisation/.test(text)) return "GAS";
-  if (/unknown|undetermined|commit\s+location|^\s*$/.test(text)) return "UNKNOWN";
+  if (/^(?:\s*)$|unknown|undetermined|commit\s+location/.test(text)) return "UNKNOWN";
   if (/other/.test(text)) return "OTHER";
   return "UNKNOWN";
 }
@@ -64,13 +64,10 @@ export function classifyAuditText(...parts: unknown[]): { category: AuditCategor
   const tags = new Set<string>();
   for (const rule of CATEGORY_RULES) {
     let score = 0;
-    for (const pattern of rule.patterns) {
-      if (pattern.test(text)) score += 1;
-      pattern.lastIndex = 0;
-    }
+    for (const pattern of rule.patterns) if (pattern.test(text)) score += 1;
     if (score > 0) {
       scores.set(rule.category, score);
-      rule.tags.forEach(tag => tags.add(tag));
+      for (const tag of rule.tags) tags.add(tag);
     }
   }
   const ranked = [...scores.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
