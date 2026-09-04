@@ -19,11 +19,17 @@ function parsePositiveInt(value, fallback) {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-async function download(url, target) {
+async function downloadPinnedDataset(target) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5 * 60_000);
   try {
-    const response = await fetch(url, { redirect: "follow", signal: controller.signal, headers: { "user-agent": "ethereum-defi-risk-radar-dataset-preparer/1" } });
+    // The network destination is intentionally fixed. --source may select a local file,
+    // but it cannot redirect this developer utility to an arbitrary remote host.
+    const response = await fetch(DEFAULT_SOURCE, {
+      redirect: "follow",
+      signal: controller.signal,
+      headers: { "user-agent": "ethereum-defi-risk-radar-dataset-preparer/1" }
+    });
     if (!response.ok || !response.body) throw new Error(`Dataset download failed with HTTP ${response.status}`);
     const reader = response.body.getReader();
     const chunks = [];
@@ -101,6 +107,9 @@ function stableBuildId(records) {
 
 async function main() {
   const source = arg("source", DEFAULT_SOURCE);
+  if (/^https?:\/\//i.test(source) && source !== DEFAULT_SOURCE) {
+    throw new Error("Remote --source URLs are not accepted. Use the pinned Zaevlad source or provide a local CSV path.");
+  }
   const outputDir = path.resolve(arg("output", DEFAULT_OUTPUT));
   const maxRecords = parsePositiveInt(arg("max-records", "100000"), 100_000);
   await fs.mkdir(outputDir, { recursive: true });
@@ -109,12 +118,14 @@ async function main() {
   let downloaded = false;
 
   try {
-    if (/^https:\/\//i.test(source)) {
-      console.log(`Downloading public audit corpus from ${source}`);
-      const size = await download(source, temporary);
+    if (source === DEFAULT_SOURCE) {
+      console.log("Downloading the pinned public Zaevlad audit corpus.");
+      const size = await downloadPinnedDataset(temporary);
       console.log(`Downloaded ${(size / 1024 / 1024).toFixed(1)} MB`);
       inputPath = temporary;
       downloaded = true;
+    } else {
+      inputPath = path.resolve(source);
     }
 
     const stat = await fs.stat(inputPath);
@@ -164,7 +175,7 @@ async function main() {
     const metadata = {
       schemaVersion: 1,
       sourceName: "Zaevlad Smart Contract Audit Findings — locally cleaned",
-      sourceUrl: /^https:\/\//i.test(source) ? source : undefined,
+      sourceUrl: source === DEFAULT_SOURCE ? DEFAULT_SOURCE : undefined,
       generatedAt,
       buildId: stableBuildId(records),
       recordCount: records.length,
