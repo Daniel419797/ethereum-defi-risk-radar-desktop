@@ -1,0 +1,29 @@
+name: Audit Intelligence Quality Gate
+
+on:
+  pull_request:
+    paths:
+      - 'ethereum-defi-risk-radar-desktop-v0.7.0/**'
+      - '.github/workflows/audit-intelligence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ethereum-defi-risk-radar-desktop-v0.7.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+          cache: npm
+          cache-dependency-path: ethereum-defi-risk-radar-desktop-v0.7.0/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run test:analysis
+      - run: npm run test:proof
