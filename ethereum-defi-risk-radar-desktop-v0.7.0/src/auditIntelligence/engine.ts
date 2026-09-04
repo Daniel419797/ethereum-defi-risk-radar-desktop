@@ -100,6 +100,7 @@ type CategoryModel = {
 
 export class AuditIntelligenceEngine {
   readonly metadata: AuditCorpusMetadata;
+  private readonly corpusSize: number;
   private readonly documents: IndexedDocument[];
   private readonly documentFrequency = new Map<string, number>();
   private readonly inverted = new Map<string, Array<{ index: number; tf: number }>>();
@@ -108,7 +109,8 @@ export class AuditIntelligenceEngine {
 
   constructor(records: CleanAuditRecord[], metadata?: Partial<AuditCorpusMetadata>) {
     const bounded = records.slice(0, 100_000);
-    this.metadata = normalizeMetadata(metadata, bounded.length);
+    this.corpusSize = bounded.length;
+    this.metadata = normalizeMetadata(metadata, this.corpusSize);
 
     for (const category of AUDIT_CATEGORIES) {
       this.categoryModels.set(category, { documentCount: 0, tokenCount: 0, tokens: new Map() });
@@ -163,7 +165,7 @@ export class AuditIntelligenceEngine {
 
   private idf(token: string) {
     const df = this.documentFrequency.get(token) ?? 0;
-    return Math.log(1 + (this.documents.length + 1) / (df + 1));
+    return Math.log(1 + (this.corpusSize + 1) / (df + 1));
   }
 
   private tfidf(token: string, count: number) {
@@ -172,14 +174,14 @@ export class AuditIntelligenceEngine {
 
   predictCategory(text: string): AuditCategoryPrediction {
     const tokens = tokenize(text);
-    if (!tokens.length || this.documents.length === 0) return { category: "other", confidence: 0, scores: { other: 0 } };
+    if (!tokens.length || this.corpusSize === 0) return { category: "other", confidence: 0, scores: { other: 0 } };
     const vocabularySize = Math.max(1, this.vocabulary.size);
     const categoriesWithData = AUDIT_CATEGORIES.filter(category => (this.categoryModels.get(category)?.documentCount ?? 0) > 0);
     if (!categoriesWithData.length) return { category: "other", confidence: 0, scores: { other: 0 } };
 
     const logScores = categoriesWithData.map(category => {
       const model = this.categoryModels.get(category)!;
-      let score = Math.log((model.documentCount + 1) / (this.documents.length + categoriesWithData.length));
+      let score = Math.log((model.documentCount + 1) / (this.corpusSize + categoriesWithData.length));
       const denominator = model.tokenCount + vocabularySize;
       for (const token of tokens) score += Math.log(((model.tokens.get(token) ?? 0) + 1) / denominator);
       return { category, score };
