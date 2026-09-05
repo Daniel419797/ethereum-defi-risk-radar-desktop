@@ -1,0 +1,70 @@
+name: Build macOS Unsigned Test Package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-unsigned-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-macos-unsigned:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ethereum-defi-risk-radar-desktop-v0.7.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.16.0"
+          cache: npm
+          cache-dependency-path: ethereum-defi-risk-radar-desktop-v0.7.0/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run full repository checks
+        run: npm run check
+
+      - name: Build unsigned universal package for testing only
+        run: npm run dist:mac:unsigned
+
+      - name: Verify packaged CLI runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_VERSION="$(node -p "require('./package.json').version")"
+          APP_PATH="$(find release -type d -name 'Ethereum DeFi Risk Radar.app' -print -quit)"
+          test -n "$APP_PATH"
+          EXECUTABLE="$APP_PATH/Contents/MacOS/Ethereum DeFi Risk Radar"
+          LAUNCHER="$APP_PATH/Contents/Resources/cli/launch.cjs"
+          test -f "$EXECUTABLE"
+          test -f "$LAUNCHER"
+          VERSION="$(ELECTRON_RUN_AS_NODE=1 "$EXECUTABLE" "$LAUNCHER" version | tr -d '\r')"
+          test "$VERSION" = "$EXPECTED_VERSION"
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release
+          shasum -a 256 *.dmg *.zip > SHA256SUMS-unsigned-test.txt
+          cat SHA256SUMS-unsigned-test.txt
+
+      - name: Upload unsigned test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ethereum-defi-risk-radar-macos-unsigned-test-only
+          path: |
+            ethereum-defi-risk-radar-desktop-v0.7.0/release/Ethereum-DeFi-Risk-Radar-*.dmg
+            ethereum-defi-risk-radar-desktop-v0.7.0/release/Ethereum-DeFi-Risk-Radar-*.zip
+            ethereum-defi-risk-radar-desktop-v0.7.0/release/SHA256SUMS-unsigned-test.txt
+          if-no-files-found: error
+          retention-days: 7
