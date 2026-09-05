@@ -18,6 +18,12 @@ const production = fs.readFileSync(productionWorkflowPath, "utf8");
 const unsigned = fs.readFileSync(unsignedWorkflowPath, "utf8");
 const verifyMac = fs.readFileSync(verifyMacPath, "utf8");
 
+const immutableActionPins = [
+  "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+  "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+  "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+];
+
 const requiredProductionTokens = [
   "push:",
   "tags:",
@@ -35,7 +41,9 @@ const requiredProductionTokens = [
   "gh release create",
   "gh release upload",
   "contents: write",
-  "github.ref_type == 'tag'"
+  "github.ref_type == 'tag'",
+  ...immutableActionPins,
+  "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
 ];
 
 for (const token of requiredProductionTokens) {
@@ -46,9 +54,14 @@ for (const token of [
   "workflow_dispatch:",
   "npm run dist:mac:unsigned",
   "SHA256SUMS-unsigned-test.txt",
-  "working-directory: ethereum-defi-risk-radar-desktop-v0.7.0"
+  "working-directory: ethereum-defi-risk-radar-desktop-v0.7.0",
+  ...immutableActionPins
 ]) {
   assert.ok(unsigned.includes(token), `Unsigned macOS workflow is missing required token: ${token}`);
+}
+
+for (const workflow of [production, unsigned]) {
+  assert.ok(!/uses:\s+actions\/[^@\s]+@v\d+/i.test(workflow), "Release workflows must pin GitHub Actions to immutable commit SHAs rather than mutable major-version tags.");
 }
 
 assert.ok(!unsigned.includes("push:\n    tags:"), "Unsigned macOS workflow must never publish from release tags.");
@@ -63,4 +76,4 @@ for (const legacyPath of [
   assert.equal(fs.existsSync(legacyPath), false, `Ignored nested workflow still exists: ${legacyPath}`);
 }
 
-console.log("Release workflow checks passed: repository-level workflows, gated publishing, dynamic version verification, and nested-workflow cleanup are present.");
+console.log("Release workflow checks passed: repository-level workflows, immutable action pins, gated publishing, dynamic version verification, and nested-workflow cleanup are present.");
