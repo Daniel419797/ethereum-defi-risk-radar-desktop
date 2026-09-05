@@ -6,6 +6,12 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
+EXPECTED_VERSION="$(node -p "require('./package.json').version")"
+if [[ -z "${EXPECTED_VERSION}" ]]; then
+  echo "ERROR: Unable to read package version." >&2
+  exit 1
+fi
+
 APP_PATH="$(find release -type d -name 'Ethereum DeFi Risk Radar.app' -print -quit)"
 if [[ -z "${APP_PATH}" ]]; then
   echo "ERROR: Packaged .app was not found below release/." >&2
@@ -35,8 +41,8 @@ fi
 
 echo "Verifying packaged risk-radar CLI runtime..."
 CLI_VERSION="$(ELECTRON_RUN_AS_NODE=1 "${EXECUTABLE}" "${CLI_LAUNCHER}" version | tr -d '\r')"
-if [[ "${CLI_VERSION}" != "0.7.0" ]]; then
-  echo "ERROR: Packaged CLI returned unexpected version: ${CLI_VERSION}" >&2
+if [[ "${CLI_VERSION}" != "${EXPECTED_VERSION}" ]]; then
+  echo "ERROR: Packaged CLI returned unexpected version: ${CLI_VERSION}; expected ${EXPECTED_VERSION}." >&2
   exit 1
 fi
 
@@ -48,4 +54,4 @@ if [[ "${LIPO_OUTPUT}" != *"x86_64"* || "${LIPO_OUTPUT}" != *"arm64"* ]]; then
   exit 1
 fi
 
-echo "macOS verification passed: signed, Gatekeeper accepted, notarized/stapled, universal binary, bundled CLI runtime verified."
+echo "macOS verification passed: signed, Gatekeeper accepted, notarized/stapled, universal binary, bundled CLI runtime verified for version ${EXPECTED_VERSION}."
