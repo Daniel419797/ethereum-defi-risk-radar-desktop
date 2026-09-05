@@ -105,3 +105,33 @@ live RPC probing was rejected because passive operation remains a product constr
 pages. Discovery becomes stricter and may return fewer rows, especially without Etherscan configured.
 The resolver is deliberately bounded and heuristic; protocol aliases and multi-deployment grouping can
 be improved later without weakening the verified-source promotion gate.
+
+## ADR-7 - Keep Historical Audit Intelligence local, bounded, and subordinate to evidence
+
+**Status.** Accepted, 2026-09-04.
+
+**Context.** A third-party corpus provides 23,625 historical smart-contract audit findings and can
+improve taxonomy, retrieval, remediation context, and analyzer evaluation. The corpus is raw and
+semi-structured, contains many placeholder PoCs/recommendations, and its dataset card declares
+`license: other` with unclear underlying audit-report redistribution/commercial-use rights. Historical
+similarity also cannot prove that a current deployed contract is vulnerable or exploitable.
+
+**Decision.** Implement three layers: (1) a deterministic local cleaning/evaluation pipeline that
+normalizes and deduplicates the corpus while discarding PoC code; (2) Historical Audit Intelligence
+that retrieves bounded analogues for existing source/structural findings; and (3) dependency-free local
+statistical models using Naive Bayes classification plus TF-IDF similarity and deterministic holdout
+evaluation. Generated corpora stay outside Git and installers. The default runtime path is under the
+user's home directory and can be overridden with `RISK_RADAR_AUDIT_CORPUS`. Historical scores are
+review-prioritization context only and never modify `HEURISTIC`, `STRUCTURAL`, `EXECUTED`, or
+`REPRODUCED` evidence strength.
+
+**Alternatives.** Bundling the full corpus was rejected because provenance rights are unresolved.
+Sending findings to an external embedding/LLM service was rejected because the offline baseline and
+privacy boundary are product requirements. Training an exploit-generation model was rejected because
+it is unnecessary for defensive triage and would expand safety and distribution risk. Treating
+historical similarity as a vulnerability verdict was rejected for correctness.
+
+**Consequences.** Users who prepare the local corpus gain historical analogues, category prediction,
+historical severity context, and common remediation patterns without weakening evidence semantics.
+The application remains useful without the corpus. Reassess bundling or derived-model distribution
+only after dataset provenance and commercial-use rights are explicitly resolved.

@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "task_id": "historical-audit-intelligence",
+  "title": "Clean historical audit corpus and add local audit intelligence",
+  "requirements": [
+    { "id": "FR-41", "text": "Provide a deterministic local pipeline that cleans, deduplicates, severity-normalizes and taxonomy-labels the third-party audit corpus." },
+    { "id": "FR-42", "text": "Do not persist PoC/exploit code in the cleaned Historical Audit Intelligence corpus." },
+    { "id": "FR-43", "text": "Attach bounded historical analogue context to verified-source and structural findings when a local cleaned corpus is configured." },
+    { "id": "FR-44", "text": "Provide a local vulnerability-category classifier, similarity engine, historical review-priority model and deterministic holdout evaluation." },
+    { "id": "FR-45", "text": "Expand verified-source review vocabulary with token-accounting, permit/replay, cross-chain, liquidation/solvency and MEV/slippage surfaces." },
+    { "id": "FR-46", "text": "Historical intelligence must remain optional and the normal scanner must work when no corpus is installed." },
+    { "id": "FR-47", "text": "Generated third-party corpus files must not be committed or bundled into installers while redistribution/commercial-use rights are unresolved." },
+    { "id": "FR-48", "text": "Historical similarity and risk context must never be represented as vulnerability proof or exploitability percentage." }
+  ],
+  "acceptance": [
+    { "id": "AC-41", "text": "npm run build succeeds." },
+    { "id": "AC-42", "text": "npm run test:audit-intelligence succeeds." },
+    { "id": "AC-43", "text": "npm run check succeeds with the audit-intelligence regression included." },
+    { "id": "AC-44", "text": "Cleaner metadata records local-only licensing constraints and proofOfConceptContentRetained=false." },
+    { "id": "AC-45", "text": "Regression evidence proves historical output contains no PoC field/code and verified-source inspection remains truthful about evidence limitations." },
+    { "id": "AC-46", "text": "No third-party dataset payload is added to Git history or Electron build files." }
+  ],
+  "quality_gates": {
+    "security": "required",
+    "correctness": "required",
+    "reliability": "required",
+    "performance": "bounded corpus <=96MB at runtime; max 100k records; max 32 current findings and 3 analogues per finding",
+    "privacy": "local corpus only; no remote model inference; PoC content discarded",
+    "licensing": "unverified third-party corpus is never bundled"
+  }
+}

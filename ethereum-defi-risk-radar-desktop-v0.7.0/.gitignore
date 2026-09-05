@@ -10,3 +10,12 @@ reports/*.csv
 *.p8
 *.cer
 *.mobileprovision
+
+# Historical Audit Intelligence corpora are generated locally from third-party audit data.
+# The source dataset has unclear redistribution/commercial-use rights and must not be bundled.
+audit-data/
+*.audit-corpus.jsonl
+cleaned-audit-findings.jsonl
+audit-benchmark.jsonl
+audit-dataset-stats.json
+audit-evaluation.json
