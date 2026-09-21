@@ -980,7 +980,10 @@ export async function scanLegacyEthereumDefi(opts: {
                 .advancedAnalysis.findings,
               ...(bytecode?.bytecodeAnalysis
                 .findings || [])
-            ]
+            ],
+            nativeAnalysis:
+              inspection.inspection
+                .advancedAnalysis
           };
         }
       ),
