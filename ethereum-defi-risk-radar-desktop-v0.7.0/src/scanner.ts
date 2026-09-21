@@ -10,6 +10,10 @@ import type {
 import { TinyFishSearchClient } from "./tinyfish.js";
 import { EtherscanClient } from "./etherscan.js";
 import { detectSignals } from "./signals.js";
+import { attestRuntimeBytecode } from "./intelligence/attestation.js";
+import { buildAttackPaths, buildProtocolKnowledgeGraph } from "./intelligence/graph.js";
+import { buildEvidenceEscalationPlans, evaluateInvariantApplicability } from "./intelligence/invariants.js";
+import { capturePinnedStateSnapshot, type ReadonlyRpc } from "./intelligence/rpc.js";
 
 const PURPOSE =
   "Defensive Ethereum DeFi OSINT research: use public documents only as leads, then promote a result to a protocol candidate only after resolving an Ethereum Mainnet deployment and validating verified source with Etherscan. Do not probe live contracts, test exploitability, or produce exploit instructions.";
@@ -419,6 +423,8 @@ export async function scanLegacyEthereumDefi(opts: {
   inspectVerifiedSource: boolean;
   maxSourceBytes: number;
   maxSourceFindings: number;
+  ethereumRpc?: ReadonlyRpc;
+  snapshotConfirmations?: number;
   onProgress?: (message: string) => void;
   onProgressEvent?: (event: ScanProgressEvent) => void;
 }): Promise<Candidate[]> {
@@ -609,6 +615,14 @@ export async function scanLegacyEthereumDefi(opts: {
     let advancedFindingCount = 0;
     const sourceInspections: Candidate["ethereum"]["sourceInspections"] = [];
     const lookedUpAddresses = new Set<string>();
+    const intelligenceTargets: Array<{
+      address: string;
+      contractRefId: string;
+      sourceRole: "DIRECT" | "PROXY" | "IMPLEMENTATION";
+      compilerVersion?: string;
+      sourceSha256?: string;
+      explorerVerified: boolean;
+    }> = [];
 
     for (const rootAddress of uniqueAddresses) {
       if (etherscanLookupsAttempted >= opts.maxEtherscanLookupsPerCandidate) break;
@@ -635,6 +649,17 @@ export async function scanLegacyEthereumDefi(opts: {
 
           if (source.verified) verifiedSourceContracts += 1;
           if (source.proxy) proxyContracts += 1;
+          const sourceRole = depth === 0 ? (source.proxy ? "PROXY" : "DIRECT") : "IMPLEMENTATION";
+          if (source.verified) {
+            intelligenceTargets.push({
+              address: currentAddress,
+              contractRefId: contractRefId(currentAddress),
+              sourceRole,
+              compilerVersion: source.compilerVersion,
+              sourceSha256: source.sourceSha256,
+              explorerVerified: true
+            });
+          }
           if (source.sourceInspection) {
             sourceContractsInspected += 1;
             sourceFindingCount += source.sourceInspection.findingCount;
@@ -643,7 +668,7 @@ export async function scanLegacyEthereumDefi(opts: {
             sourceInspections.push({
               contractRefId: contractRefId(currentAddress),
               rootContractRefId: rootRef,
-              sourceRole: depth === 0 ? (source.proxy ? "PROXY" : "DIRECT") : "IMPLEMENTATION",
+              sourceRole,
               contractName: source.contractName,
               compilerVersion: source.compilerVersion,
               proxy: source.proxy,
@@ -679,7 +704,7 @@ export async function scanLegacyEthereumDefi(opts: {
     // Documents are leads only. A row reaches Results only after at least one actual
     // Mainnet address returns verified source metadata from Etherscan.
     if (verifiedSourceContracts > 0) {
-      candidates.push({
+      const candidate: Candidate = {
         id: protocolId(lead.key),
         entityKind: "PROTOCOL",
         resolutionStatus:
@@ -710,7 +735,66 @@ export async function scanLegacyEthereumDefi(opts: {
           sourceInspections
         },
         classification: classify(score, uniqueKinds.length)
-      });
+      };
+
+      const graph = buildProtocolKnowledgeGraph(candidate);
+      const analysisFindings = sourceInspections.flatMap(
+        inspection => inspection.inspection.advancedAnalysis.findings
+      );
+      const invariants = evaluateInvariantApplicability(graph, analysisFindings);
+      const escalationPlans = buildEvidenceEscalationPlans(analysisFindings, invariants);
+      const attackPaths = buildAttackPaths(candidate);
+      let snapshot;
+      const attestations = [];
+
+      if (opts.ethereumRpc && intelligenceTargets.length) {
+        try {
+          snapshot = await capturePinnedStateSnapshot(
+            opts.ethereumRpc,
+            intelligenceTargets.map(target => ({
+              address: target.address,
+              contractRefId: target.contractRefId,
+              sourceRole: target.sourceRole
+            })),
+            {
+              confirmations: opts.snapshotConfirmations ?? 12,
+              maxContracts: Math.min(intelligenceTargets.length, 128)
+            }
+          );
+
+          const blockTag = `0x${snapshot.blockNumber.toString(16)}`;
+          for (const target of intelligenceTargets) {
+            const runtime = await opts.ethereumRpc<string>("eth_getCode", [target.address, blockTag]);
+            attestations.push(attestRuntimeBytecode({
+              contractRefId: target.contractRefId,
+              sourceRole: target.sourceRole,
+              observedRuntime: runtime,
+              explorerVerified: target.explorerVerified,
+              compilerVersion: target.compilerVersion,
+              sourceSha256: target.sourceSha256,
+              blockNumber: snapshot.blockNumber,
+              blockHash: snapshot.blockHash
+            }));
+          }
+        } catch (error) {
+          opts.onProgress?.(
+            `Pinned protocol intelligence unavailable for ${lead.label}: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
+      }
+
+      candidate.intelligence = {
+        graph,
+        snapshot,
+        attestations,
+        invariants,
+        escalationPlans,
+        attackPaths,
+        generatedAt: new Date().toISOString()
+      };
+      candidates.push(candidate);
     } else {
       opts.onProgress?.(`Filtered unresolved lead: ${lead.label}`);
     }
