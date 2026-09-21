@@ -282,7 +282,7 @@ export type NativeAnalysisReport = {
 };
 
 export type ToolCapability = {
-  id: AnalysisEngineId | "python" | "docker";
+  id: AnalysisEngineId | "python" | "docker" | "solc";
   available: boolean;
   executable?: string;
   version?: string;
