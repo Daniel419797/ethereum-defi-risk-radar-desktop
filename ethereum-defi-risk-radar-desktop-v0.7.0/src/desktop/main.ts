@@ -23,6 +23,9 @@ import { ECONOMIC_SCENARIO_PACKS } from "../analysis/economic/scenarios.js";
 import { runProtocolScenarios, type ProtocolObservations } from "../analysis/protocol.js";
 import { replayOnPinnedAnvil, type ForkReplaySpec } from "../analysis/reproduction.js";
 import { createReadonlyEthereumRpc } from "../intelligence/rpc.js";
+import { runBenchmarkCli } from "../intelligence/benchmarkCli.js";
+import { runMonitorCli } from "../intelligence/monitorCli.js";
+import { runUpgradeDiffCli } from "../intelligence/upgradeCli.js";
 import { analyzeProjectFromDesktop, replayForkFromDesktop, simulateEconomicFromDesktop, simulateProtocolFromDesktop } from "./analysisLab.js";
 import type { Candidate } from "../types.js";
 
@@ -451,7 +454,7 @@ async function startScan(request: ScanRequest) {
 
     send("scan:progress", {
       phase: "REPORT",
-      message: "Writing JSON and CSV reports",
+      message: "Writing security review, SARIF and machine-readable artifacts",
       completed: 1,
       total: 1,
       overallPercent: 98
@@ -873,6 +876,10 @@ Commands:
                         Run scenario packs against a source-linked protocol model
   replay-fork <spec.json> --confirm-fork
                         Replay transactions on a pinned loopback Anvil fork
+  benchmark [roots]     Evaluate Risk Radar against pinned SmartBugs/CVE/DeFiHackLabs corpora
+  monitor <target.json> Capture or continuously compare pinned protocol state
+  upgrade-diff <before.json> <after.json>
+                        Compare protocol graph, storage, state and findings across scans
   version               Print the application version
   help                  Show this help
 
@@ -886,6 +893,21 @@ Project analysis options:
   --deep                Include installed Slither, Mythril, Foundry, and Echidna
   --trust-project       Confirm project build/test code may execute (required by --deep)
   --timeout=120         Per-engine timeout in seconds (1-3600)
+
+Benchmark options:
+  --smartbugs=<dir>     SmartBugs Curated checkout at the documented pinned revision
+  --cve=<dir>           CVE Smart Contracts checkout at the documented pinned revision
+  --defihacklabs=<dir>  DeFiHackLabs checkout at the documented pinned revision
+  --max=5000            Maximum imported benchmark cases
+  --reproduce-defihacklabs --trust-third-party-code
+                        Explicitly execute reviewed third-party Foundry reproductions
+
+Monitoring options:
+  --iterations=1        Number of finalized-state checks
+  --interval-seconds=300
+                        Delay between continuous checks (minimum 30 seconds)
+  --state=<file>        Persistent monitor-state file
+  --use-target-rpc      Explicitly allow a reviewed target JSON to supply its RPC URL
 
 Configuration keys:
   tinyfish-key          Secure TinyFish API key (interactive prompt)
@@ -1005,7 +1027,7 @@ async function cliReports() {
   const entries = await fs.readdir(cfg.preferences.outputDir, { withFileTypes: true });
   const reports = [] as Array<{ name: string; modified: number; bytes: number }>;
   for (const entry of entries) {
-    if (!entry.isFile() || !/\.(json|csv)$/i.test(entry.name)) continue;
+    if (!entry.isFile() || !/\.(json|csv|html|sarif|md)$/i.test(entry.name)) continue;
     const stat = await fs.stat(path.join(cfg.preferences.outputDir, entry.name));
     reports.push({ name: entry.name, modified: stat.mtimeMs, bytes: stat.size });
   }
@@ -1073,8 +1095,12 @@ async function cliScan(args: string[]) {
     highReview: c.ethereum.sourceHighReviewCount,
     candidate: c.label.slice(0, 54)
   })));
-  console.log(`JSON: ${paths.jsonPath}`);
-  console.log(`CSV:  ${paths.csvPath}`);
+  console.log(`JSON:         ${paths.jsonPath}`);
+  console.log(`Detailed CSV: ${paths.csvPath}`);
+  console.log(`Summary CSV:  ${paths.summaryCsvPath}`);
+  console.log(`Findings CSV: ${paths.findingsCsvPath}`);
+  console.log(`Security HTML:${paths.securityReviewPath}`);
+  console.log(`SARIF:        ${paths.sarifPath}`);
 }
 
 async function cliDoctor() {
@@ -1256,6 +1282,18 @@ async function runDesktopCli() {
       case "simulate-economic": return await cliSimulateEconomic(args);
       case "simulate-protocol": return await cliSimulateProtocol(args);
       case "replay-fork": return await cliReplayFork(args);
+      case "benchmark": {
+        const cfg = await runtimeConfig();
+        return await runBenchmarkCli(args, cfg.preferences.outputDir);
+      }
+      case "monitor": {
+        const cfg = await runtimeConfig();
+        return await runMonitorCli(args, cfg.ethereumRpcUrl, cfg.preferences.outputDir);
+      }
+      case "upgrade-diff": {
+        const cfg = await runtimeConfig();
+        return await runUpgradeDiffCli(args, cfg.preferences.outputDir);
+      }
       default: throw new Error(`Unknown command: ${command}. Run risk-radar help.`);
     }
   } catch (error) {
