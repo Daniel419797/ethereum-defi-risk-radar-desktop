@@ -87,6 +87,15 @@
               </span>
             </label>
 
+            <label class="field-group">
+              <span class="field-label">Ethereum Mainnet RPC <em>optional</em></span>
+              <span class="field-help">Enables pinned state snapshots, bytecode attestation, upgrade intelligence and continuous monitoring. Read-only RPC methods only.</span>
+              <span class="secret-input-wrap">
+                <input id="setup-rpc-url" type="password" autocomplete="off" placeholder="https://your-mainnet-rpc.example/..." />
+                <button class="text-button reveal-button" type="button" data-reveal="setup-rpc-url">Show</button>
+              </span>
+            </label>
+
             <div id="setup-secure-warning" class="notice danger hidden">
               Secure OS encryption is unavailable. API credentials cannot be stored safely on this device.
             </div>
