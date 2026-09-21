@@ -1263,6 +1263,371 @@ async function cliReplayFork(args: string[]) {
   return finding ? 3 : 0;
 }
 
+
+async function readBoundedJson<T>(filePath: string, maxBytes = 5_000_000): Promise<T> {
+  const resolved = path.resolve(filePath);
+  const stat = await fs.stat(resolved);
+  if (!stat.isFile() || stat.size > maxBytes) {
+    throw new Error("JSON input must be a file no larger than " + maxBytes + " bytes.");
+  }
+  return JSON.parse(await fs.readFile(resolved, "utf8")) as T;
+}
+
+async function configuredMainnetReader() {
+  const cfg = await runtimeConfig();
+  if (!cfg.ethereumRpcUrl) {
+    throw new Error(
+      "A read-only Ethereum Mainnet RPC is required. Configure it with: risk-radar config set rpc-url"
+    );
+  }
+  const reader = new ReadOnlyEthereumRpcClient(cfg.ethereumRpcUrl);
+  const chainId = await reader.getChainId();
+  if (chainId !== 1) {
+    throw new Error("Configured RPC is not Ethereum Mainnet chainId 1.");
+  }
+  return reader;
+}
+
+async function cliSnapshotState(args: string[]) {
+  const positional = args.filter(arg => !arg.startsWith("--"));
+  if (!positional[0]) {
+    throw new Error(
+      "Usage: risk-radar snapshot-state <spec.json> [--out=<snapshot.json>]"
+    );
+  }
+
+  const input = await readBoundedJson<{
+    blockNumber?: number;
+    targets?: Array<{
+      address: string;
+      contractRefId: string;
+      callProbes?: Array<{ id: string; data: string }>;
+    }>;
+  }>(positional[0]);
+
+  if (!Array.isArray(input.targets) || !input.targets.length) {
+    throw new Error("Snapshot specification requires a non-empty targets array.");
+  }
+
+  const reader = await configuredMainnetReader();
+  const snapshot = await capturePinnedStateSnapshot({
+    reader,
+    targets: input.targets,
+    blockNumber: input.blockNumber
+  });
+
+  const outputPath = path.resolve(
+    cliOption(args, "out") ||
+      path.join(
+        (await runtimeConfig()).preferences.outputDir,
+        "protocol-state-" + snapshot.blockNumber + "-" + Date.now() + ".json"
+      )
+  );
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(outputPath, JSON.stringify(snapshot, null, 2), {
+    encoding: "utf8",
+    mode: 0o600
+  });
+  console.log(JSON.stringify({
+    snapshot: outputPath,
+    blockNumber: snapshot.blockNumber,
+    blockHash: snapshot.blockHash,
+    contracts: snapshot.contracts.length,
+    partial: snapshot.partial,
+    digest: snapshot.digest
+  }, null, 2));
+  return snapshot.partial ? 2 : 0;
+}
+
+async function cliUpgradeDiff(args: string[]) {
+  const positional = args.filter(arg => !arg.startsWith("--"));
+  if (positional.length < 2) {
+    throw new Error(
+      "Usage: risk-radar upgrade-diff <before.json> <after.json> [--out=<diff.json>]"
+    );
+  }
+
+  const previousSnapshot =
+    await readBoundedJson<PinnedStateSnapshot>(positional[0], 20_000_000);
+  const currentSnapshot =
+    await readBoundedJson<PinnedStateSnapshot>(positional[1], 20_000_000);
+  const comparison = compareProtocolUpgrade({
+    previousSnapshot,
+    currentSnapshot
+  });
+
+  const outputPath = path.resolve(
+    cliOption(args, "out") ||
+      path.join(
+        (await runtimeConfig()).preferences.outputDir,
+        "upgrade-diff-" +
+          previousSnapshot.blockNumber +
+          "-" +
+          currentSnapshot.blockNumber +
+          ".json"
+      )
+  );
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(outputPath, JSON.stringify(comparison, null, 2), {
+    encoding: "utf8",
+    mode: 0o600
+  });
+  console.log(JSON.stringify({
+    report: outputPath,
+    changed: comparison.changed,
+    critical: comparison.critical,
+    high: comparison.high,
+    medium: comparison.medium,
+    changes: comparison.changes.length
+  }, null, 2));
+  return comparison.critical || comparison.high ? 3 : comparison.changed ? 2 : 0;
+}
+
+async function cliMonitor(args: string[]) {
+  const action = (args.shift() || "list").toLowerCase();
+  const registryPath = monitorRegistryPath();
+
+  if (action === "list") {
+    const registry = await readMonitorRegistry(registryPath);
+    console.table(
+      registry.watches.map(watch => ({
+        id: watch.id,
+        name: watch.name,
+        everyMinutes: watch.intervalMinutes,
+        targets: watch.targets.length,
+        lastBlock: watch.lastSnapshot?.blockNumber ?? "—",
+        lastRun: watch.lastRunAt ?? "never"
+      }))
+    );
+    return 0;
+  }
+
+  if (action === "add") {
+    const name = args.shift();
+    const specPath = args.shift();
+    if (!name || !specPath) {
+      throw new Error(
+        "Usage: risk-radar monitor add <name> <spec.json>"
+      );
+    }
+    const spec = await readBoundedJson<{
+      intervalMinutes?: number;
+      targets?: Array<{
+        address: string;
+        contractRefId: string;
+        callProbes?: Array<{ id: string; data: string }>;
+      }>;
+    }>(specPath);
+    if (!Array.isArray(spec.targets) || !spec.targets.length) {
+      throw new Error("Monitor specification requires a non-empty targets array.");
+    }
+    const watch = await upsertProtocolWatch(registryPath, {
+      name,
+      intervalMinutes: spec.intervalMinutes,
+      targets: spec.targets
+    });
+    console.log(JSON.stringify({
+      id: watch.id,
+      name: watch.name,
+      intervalMinutes: watch.intervalMinutes,
+      targets: watch.targets.length
+    }, null, 2));
+    return 0;
+  }
+
+  if (action === "remove") {
+    const idOrName = args.shift();
+    if (!idOrName) {
+      throw new Error("Usage: risk-radar monitor remove <id-or-name>");
+    }
+    const removed = await removeProtocolWatch(registryPath, idOrName);
+    if (!removed) throw new Error("Protocol monitor watch not found.");
+    console.log("Protocol monitor watch removed.");
+    return 0;
+  }
+
+  if (action === "run") {
+    const reader = await configuredMainnetReader();
+    const runAll = cliFlag(args, "all");
+    if (runAll) {
+      const registry = await readMonitorRegistry(registryPath);
+      const results = [];
+      for (const watch of registry.watches) {
+        results.push(await runProtocolWatch(registryPath, reader, watch.id));
+      }
+      console.log(JSON.stringify(results.map(result => ({
+        id: result.watchId,
+        name: result.name,
+        block: result.snapshot.blockNumber,
+        changed: result.diff?.changed ?? false,
+        changes: result.diff?.changes ?? []
+      })), null, 2));
+      return results.some(result => result.diff?.changed) ? 3 : 0;
+    }
+
+    const idOrName = args.find(arg => !arg.startsWith("--"));
+    if (!idOrName) {
+      throw new Error(
+        "Usage: risk-radar monitor run <id-or-name> | risk-radar monitor run --all"
+      );
+    }
+    const result = await runProtocolWatch(registryPath, reader, idOrName);
+    console.log(JSON.stringify({
+      id: result.watchId,
+      name: result.name,
+      block: result.snapshot.blockNumber,
+      changed: result.diff?.changed ?? false,
+      changes: result.diff?.changes ?? []
+    }, null, 2));
+    return result.diff?.changed ? 3 : 0;
+  }
+
+  throw new Error(
+    "Usage: risk-radar monitor list | add <name> <spec.json> | remove <id-or-name> | run <id-or-name|--all>"
+  );
+}
+
+function benchmarkCommitFor(corpus: string) {
+  if (corpus === "smartbugs") return BENCHMARK_CORPUS_COMMITS.SMARTBUGS_CURATED;
+  if (corpus === "cve") return BENCHMARK_CORPUS_COMMITS.CVE_SMART_CONTRACTS;
+  if (corpus === "defihacklabs") return BENCHMARK_CORPUS_COMMITS.DEFIHACKLABS;
+  throw new Error("Unknown benchmark corpus: " + corpus);
+}
+
+async function assertPinnedCorpusCommit(root: string, corpus: string) {
+  const expected = benchmarkCommitFor(corpus);
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["-C", path.resolve(root), "rev-parse", "HEAD"],
+      { timeout: 10_000, maxBuffer: 1_000_000 }
+    );
+    const actual = stdout.trim().toLowerCase();
+    if (actual !== expected.toLowerCase()) {
+      throw new Error(
+        "Corpus checkout is not pinned to the required commit. Expected " +
+          expected +
+          ", received " +
+          actual +
+          "."
+      );
+    }
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes("Corpus checkout is not pinned")
+    ) {
+      throw error;
+    }
+    throw new Error(
+      "Unable to verify benchmark corpus commit. Use a git checkout pinned to " +
+        expected +
+        ". " +
+        (error instanceof Error ? error.message : String(error))
+    );
+  }
+}
+
+async function loadBenchmarkCases(
+  corpus: string,
+  root: string
+): Promise<BenchmarkCase[]> {
+  if (corpus === "smartbugs") return loadSmartBugsCurated(root);
+  if (corpus === "cve") return loadCveSmartContracts(root);
+  if (corpus === "defihacklabs") return loadDefiHackLabs(root);
+  throw new Error(
+    "Benchmark corpus must be smartbugs, cve, or defihacklabs."
+  );
+}
+
+async function cliBenchmark(args: string[]) {
+  const positional = args.filter(arg => !arg.startsWith("--"));
+  const corpus = positional[0]?.toLowerCase();
+  const root = positional[1];
+  if (!corpus || !root) {
+    throw new Error(
+      "Usage: risk-radar benchmark <smartbugs|cve|defihacklabs> <corpus-root> [--max-cases=100] [--trust-corpus]"
+    );
+  }
+
+  await assertPinnedCorpusCommit(root, corpus);
+  const cases = await loadBenchmarkCases(corpus, root);
+  const maxCases = Math.max(
+    1,
+    Math.min(
+      Number.parseInt(cliOption(args, "max-cases") || String(cases.length), 10),
+      corpus === "defihacklabs" ? 500 : 10_000
+    )
+  );
+
+  let predictions: BenchmarkPrediction[];
+  if (corpus === "defihacklabs") {
+    predictions = await runDefiHackLabsReproductionBenchmark({
+      root,
+      cases,
+      maxCases,
+      trusted: cliFlag(args, "trust-corpus"),
+      timeoutMs:
+        Math.max(
+          5,
+          Math.min(
+            Number.parseInt(cliOption(args, "timeout") || "180", 10),
+            900
+          )
+        ) * 1_000
+    });
+  } else {
+    predictions = await runSourceBenchmark({
+      root,
+      cases,
+      maxCases
+    });
+  }
+
+  const executedCases = cases.slice(0, maxCases);
+  const metrics = evaluateBenchmark(executedCases, predictions);
+  const outputDir = path.resolve(
+    cliOption(args, "out-dir") || benchmarkOutputDir()
+  );
+  await fs.mkdir(outputDir, { recursive: true });
+  const stamp = metrics.generatedAt.replace(/[:.]/g, "-");
+  const baseName = "risk-radar-benchmark-" + corpus + "-" + stamp;
+  const jsonPath = path.join(outputDir, baseName + ".json");
+  const markdownPath = path.join(outputDir, baseName + ".md");
+  await fs.writeFile(
+    jsonPath,
+    JSON.stringify(
+      {
+        scannerVersion: app.getVersion(),
+        corpus,
+        corpusCommit: benchmarkCommitFor(corpus),
+        metrics,
+        executedCaseIds: executedCases.map(item => item.id),
+        predictions
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await fs.writeFile(markdownPath, benchmarkMarkdown(metrics), "utf8");
+
+  console.log(JSON.stringify({
+    corpus,
+    pinnedCommit: benchmarkCommitFor(corpus),
+    cases: metrics.caseCount,
+    precision: metrics.precision,
+    recall: metrics.recall,
+    f1: metrics.f1,
+    falsePositiveRate: metrics.falsePositiveRate,
+    lineLocationAccuracy: metrics.lineLocationAccuracy,
+    reproductionRate: metrics.reproductionRate,
+    jsonPath,
+    markdownPath
+  }, null, 2));
+  return 0;
+}
+
 async function runDesktopCli() {
   const args = cliArgs();
   const command = (args.shift() || "help").toLowerCase();
