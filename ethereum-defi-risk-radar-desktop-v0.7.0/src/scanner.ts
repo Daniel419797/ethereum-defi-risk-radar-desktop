@@ -14,6 +14,7 @@ import { attestRuntimeBytecode } from "./intelligence/attestation.js";
 import { buildAttackPaths, buildProtocolKnowledgeGraph } from "./intelligence/graph.js";
 import { buildEvidenceEscalationPlans, evaluateInvariantApplicability } from "./intelligence/invariants.js";
 import { capturePinnedStateSnapshot, type ReadonlyRpc } from "./intelligence/rpc.js";
+import { compileVerifiedRuntimeExact } from "./intelligence/solcAttestation.js";
 
 const PURPOSE =
   "Defensive Ethereum DeFi OSINT research: use public documents only as leads, then promote a result to a protocol candidate only after resolving an Ethereum Mainnet deployment and validating verified source with Etherscan. Do not probe live contracts, test exploitability, or produce exploit instructions.";
@@ -621,6 +622,12 @@ export async function scanLegacyEthereumDefi(opts: {
       sourceRole: "DIRECT" | "PROXY" | "IMPLEMENTATION";
       compilerVersion?: string;
       sourceSha256?: string;
+      sourceText?: string;
+      optimizationUsed?: boolean;
+      optimizationRuns?: number;
+      evmVersion?: string;
+      library?: string;
+      contractName?: string;
       explorerVerified: boolean;
     }> = [];
 
@@ -657,6 +664,12 @@ export async function scanLegacyEthereumDefi(opts: {
               sourceRole,
               compilerVersion: source.compilerVersion,
               sourceSha256: source.sourceSha256,
+              sourceText: source.sourceText,
+              optimizationUsed: source.optimizationUsed,
+              optimizationRuns: source.optimizationRuns,
+              evmVersion: source.evmVersion,
+              library: source.library,
+              contractName: source.contractName,
               explorerVerified: true
             });
           }
@@ -765,16 +778,30 @@ export async function scanLegacyEthereumDefi(opts: {
           const blockTag = `0x${snapshot.blockNumber.toString(16)}`;
           for (const target of intelligenceTargets) {
             const runtime = await opts.ethereumRpc<string>("eth_getCode", [target.address, blockTag]);
-            attestations.push(attestRuntimeBytecode({
+            const compilation = await compileVerifiedRuntimeExact({
+              sourceText: target.sourceText,
+              contractName: target.contractName,
+              compilerVersion: target.compilerVersion,
+              optimizationUsed: target.optimizationUsed,
+              optimizationRuns: target.optimizationRuns,
+              evmVersion: target.evmVersion,
+              library: target.library
+            });
+            const attestation = attestRuntimeBytecode({
               contractRefId: target.contractRefId,
               sourceRole: target.sourceRole,
               observedRuntime: runtime,
+              expectedRuntime: compilation.expectedRuntime,
               explorerVerified: target.explorerVerified,
               compilerVersion: target.compilerVersion,
               sourceSha256: target.sourceSha256,
               blockNumber: snapshot.blockNumber,
               blockHash: snapshot.blockHash
-            }));
+            });
+            if (!compilation.expectedRuntime && compilation.diagnostics.length) {
+              attestation.limitations.push(...compilation.diagnostics.slice(0, 5));
+            }
+            attestations.push(attestation);
           }
         } catch (error) {
           opts.onProgress?.(
