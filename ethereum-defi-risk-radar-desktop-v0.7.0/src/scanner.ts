@@ -10,6 +10,9 @@ import type {
 import { TinyFishSearchClient } from "./tinyfish.js";
 import { EtherscanClient } from "./etherscan.js";
 import { detectSignals } from "./signals.js";
+import type { ReadOnlyChainReader } from "./intelligence/rpc.js";
+import { capturePinnedStateSnapshot } from "./intelligence/snapshot.js";
+import { buildProtocolIntelligence } from "./intelligence/platform.js";
 
 const PURPOSE =
   "Defensive Ethereum DeFi OSINT research: use public documents only as leads, then promote a result to a protocol candidate only after resolving an Ethereum Mainnet deployment and validating verified source with Etherscan. Do not probe live contracts, test exploitability, or produce exploit instructions.";
@@ -419,6 +422,9 @@ export async function scanLegacyEthereumDefi(opts: {
   inspectVerifiedSource: boolean;
   maxSourceBytes: number;
   maxSourceFindings: number;
+  chainReader?: ReadOnlyChainReader;
+  attestBytecode?: boolean;
+  solcExecutable?: string;
   onProgress?: (message: string) => void;
   onProgressEvent?: (event: ScanProgressEvent) => void;
 }): Promise<Candidate[]> {
@@ -609,6 +615,20 @@ export async function scanLegacyEthereumDefi(opts: {
     let advancedFindingCount = 0;
     const sourceInspections: Candidate["ethereum"]["sourceInspections"] = [];
     const lookedUpAddresses = new Set<string>();
+    let pinnedBlockNumber: number | undefined;
+    if (opts.chainReader) {
+      try {
+        const chainId = await opts.chainReader.getChainId();
+        if (chainId !== 1) throw new Error("configured RPC is not Ethereum Mainnet");
+        pinnedBlockNumber = (await opts.chainReader.getBlock("latest")).number;
+      } catch (error) {
+        opts.onProgress?.(
+          `Protocol state pinning unavailable for ${lead.label}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
 
     for (const rootAddress of uniqueAddresses) {
       if (etherscanLookupsAttempted >= opts.maxEtherscanLookupsPerCandidate) break;
@@ -630,7 +650,11 @@ export async function scanLegacyEthereumDefi(opts: {
           const source = await opts.etherscan.getSourceMetadata(currentAddress, {
             inspectSource: opts.inspectVerifiedSource,
             maxSourceBytes: opts.maxSourceBytes,
-            maxFindings: opts.maxSourceFindings
+            maxFindings: opts.maxSourceFindings,
+            chainReader: pinnedBlockNumber !== undefined ? opts.chainReader : undefined,
+            pinnedBlockNumber,
+            attestBytecode: Boolean(opts.attestBytecode && pinnedBlockNumber !== undefined),
+            solcExecutable: opts.solcExecutable
           });
 
           if (source.verified) verifiedSourceContracts += 1;
@@ -647,6 +671,8 @@ export async function scanLegacyEthereumDefi(opts: {
               contractName: source.contractName,
               compilerVersion: source.compilerVersion,
               proxy: source.proxy,
+              address: currentAddress,
+              bytecodeAttestation: source.bytecodeAttestation,
               inspection: source.sourceInspection
             });
           }
@@ -675,6 +701,45 @@ export async function scanLegacyEthereumDefi(opts: {
         break;
       }
     }
+
+    let pinnedStateSnapshot;
+    if (opts.chainReader && pinnedBlockNumber !== undefined && sourceInspections.length) {
+      try {
+        pinnedStateSnapshot = await capturePinnedStateSnapshot({
+          reader: opts.chainReader,
+          blockNumber: pinnedBlockNumber,
+          targets: sourceInspections
+            .filter(inspection => Boolean(inspection.address))
+            .map(inspection => ({
+              address: inspection.address!,
+              contractRefId: inspection.contractRefId
+            }))
+        });
+      } catch (error) {
+        opts.onProgress?.(
+          `Pinned state snapshot failed for ${lead.label}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
+
+    const intelligence =
+      sourceInspections.length > 0
+        ? buildProtocolIntelligence({
+            protocolId: protocolId(lead.key),
+            label: lead.label,
+            contractInspections: sourceInspections.map(inspection => ({
+              contractRefId: inspection.contractRefId,
+              rootContractRefId: inspection.rootContractRefId,
+              sourceRole: inspection.sourceRole,
+              contractName: inspection.contractName,
+              proxy: inspection.proxy,
+              protocolModel: inspection.inspection.protocolModel,
+              findings: inspection.inspection.advancedAnalysis.findings
+            }))
+          })
+        : undefined;
 
     // Documents are leads only. A row reaches Results only after at least one actual
     // Mainnet address returns verified source metadata from Etherscan.
@@ -707,7 +772,9 @@ export async function scanLegacyEthereumDefi(opts: {
           sourceFindingCount,
           sourceHighReviewCount,
           advancedFindingCount,
-          sourceInspections
+          sourceInspections,
+          pinnedStateSnapshot,
+          intelligence
         },
         classification: classify(score, uniqueKinds.length)
       });
