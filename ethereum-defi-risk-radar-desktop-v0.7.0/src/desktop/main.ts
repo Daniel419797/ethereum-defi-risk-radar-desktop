@@ -349,11 +349,16 @@ async function testConnections() {
   const result: {
     tinyfish: { ok: boolean; message: string };
     etherscan: { ok: boolean | null; message: string };
+    ethereumRpc: { ok: boolean | null; message: string };
   } = {
     tinyfish: { ok: false, message: "Not tested" },
     etherscan: {
       ok: cfg.etherscanApiKey ? false : null,
       message: cfg.etherscanApiKey ? "Not tested" : "Not configured"
+    },
+    ethereumRpc: {
+      ok: cfg.ethereumRpcUrl ? false : null,
+      message: cfg.ethereumRpcUrl ? "Not tested" : "Not configured"
     }
   };
 
@@ -364,13 +369,18 @@ async function testConnections() {
     });
     const response = await tinyfish.search({
       query: "Ethereum DeFi security",
-      purpose: "Connection test for a defensive Ethereum DeFi OSINT research application.",
+      purpose:
+        "Connection test for a defensive Ethereum DeFi OSINT research application.",
       language: "en",
       page: 0
     });
     result.tinyfish = {
       ok: true,
-      message: `Connected${Array.isArray(response.results) ? ` · ${response.results.length} results received` : ""}`
+      message:
+        "Connected" +
+        (Array.isArray(response.results)
+          ? " · " + response.results.length + " results received"
+          : "")
     };
   } catch (error) {
     result.tinyfish = {
@@ -382,13 +392,39 @@ async function testConnections() {
   if (cfg.etherscanApiKey) {
     try {
       const etherscan = new EtherscanClient(cfg.etherscanApiKey);
-      // WETH Mainnet is used only as a harmless verified-source API connectivity check.
-      await etherscan.getSourceMetadata("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", {
-        inspectSource: false
-      });
-      result.etherscan = { ok: true, message: "Connected to Etherscan API V2" };
+      await etherscan.getSourceMetadata(
+        "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        { inspectSource: false }
+      );
+      result.etherscan = {
+        ok: true,
+        message: "Connected to Etherscan API V2"
+      };
     } catch (error) {
       result.etherscan = {
+        ok: false,
+        message: error instanceof Error ? error.message : "Connection failed"
+      };
+    }
+  }
+
+  if (cfg.ethereumRpcUrl) {
+    try {
+      const rpc = new ReadOnlyEthereumRpcClient(cfg.ethereumRpcUrl);
+      const chainId = await rpc.getChainId();
+      if (chainId !== 1) throw new Error("RPC chainId is " + chainId + ", expected Ethereum Mainnet chainId 1.");
+      const block = await rpc.getBlock("latest");
+      result.ethereumRpc = {
+        ok: true,
+        message:
+          "Ethereum Mainnet · block #" +
+          block.number +
+          " · " +
+          block.hash.slice(0, 12) +
+          "…"
+      };
+    } catch (error) {
+      result.ethereumRpc = {
         ok: false,
         message: error instanceof Error ? error.message : "Connection failed"
       };
@@ -437,6 +473,9 @@ async function startScan(request: ScanRequest) {
     const etherscan = cfg.etherscanApiKey
       ? new EtherscanClient(cfg.etherscanApiKey)
       : undefined;
+    const chainReader = cfg.ethereumRpcUrl
+      ? new ReadOnlyEthereumRpcClient(cfg.ethereumRpcUrl)
+      : undefined;
 
     const candidates = await scanLegacyEthereumDefi({
       client: tinyfish,
@@ -450,6 +489,8 @@ async function startScan(request: ScanRequest) {
       inspectVerifiedSource: cfg.preferences.inspectVerifiedSource,
       maxSourceBytes: cfg.preferences.maxSourceBytes,
       maxSourceFindings: cfg.preferences.maxSourceFindingsPerContract,
+      chainReader,
+      attestBytecode: Boolean(chainReader),
       onProgress: message =>
         send("scan:log", { message, at: new Date().toISOString() }),
       onProgressEvent: event => send("scan:progress", event)
@@ -457,7 +498,7 @@ async function startScan(request: ScanRequest) {
 
     send("scan:progress", {
       phase: "REPORT",
-      message: "Writing JSON and CSV reports",
+      message: "Writing JSON, CSV, HTML and SARIF reports",
       completed: 1,
       total: 1,
       overallPercent: 98
