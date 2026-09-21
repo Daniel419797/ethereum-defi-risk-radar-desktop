@@ -1,10 +1,14 @@
 export type AnalysisEngineId =
   | "native"
+  | "bytecode"
   | "slither"
   | "mythril"
   | "foundry"
   | "anvil"
-  | "echidna";
+  | "echidna"
+  | "halmos"
+  | "kontrol"
+  | "certora";
 
 export type AnalysisKind =
   | "control_flow"
@@ -29,6 +33,25 @@ export type AnalysisKind =
   | "token_integration";
 
 export type EvidenceStrength = "HEURISTIC" | "STRUCTURAL" | "EXECUTED" | "REPRODUCED";
+
+export type EvidenceClass =
+  | "HEURISTIC"
+  | "SOURCE_STRUCTURAL"
+  | "BYTECODE_STRUCTURAL"
+  | "STATE_VALIDATED"
+  | "SYMBOLIC_COUNTEREXAMPLE"
+  | "FUZZ_COUNTEREXAMPLE"
+  | "MODEL_REPRODUCED"
+  | "FORK_REPRODUCED"
+  | "HISTORICAL_TX_REPRODUCED"
+  | "FORMALLY_DISPROVED"
+  | "PROVED_UNDER_SPEC";
+
+export type ProofVerdict =
+  | "NOT_PROVEN"
+  | "PROVED_UNDER_SPEC"
+  | "DISPROVED_BY_COUNTEREXAMPLE"
+  | "INCONCLUSIVE";
 export type AnalysisConfidence = "LOW" | "MEDIUM" | "HIGH";
 export type AnalysisSeverity = "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 export type ExploitabilityVerdict = "UNKNOWN" | "COUNTEREXAMPLE_NOT_REPLAYED" | "MODEL_VIOLATION_ONLY" | "CONFIRMED_AT_PINNED_BLOCK";
@@ -121,6 +144,8 @@ export type AnalysisFinding = {
   severity: AnalysisSeverity;
   confidence: AnalysisConfidence;
   evidenceStrength: EvidenceStrength;
+  /** More precise evidence classification; never replaces evidenceStrength compatibility semantics. */
+  evidenceClass?: EvidenceClass;
   title: string;
   description: string;
   remediation?: string;
@@ -145,6 +170,9 @@ export type AnalysisFinding = {
   correlatedEngines?: AnalysisEngineId[];
   /** Per-finding verdict. This is never a protocol-wide guarantee. */
   exploitabilityVerdict?: ExploitabilityVerdict;
+  /** Formal-verification outcome is scoped to the exact specification and assumptions. */
+  proofVerdict?: ProofVerdict;
+  proofAssumptions?: string[];
 };
 
 export type GraphNode = {
@@ -282,7 +310,7 @@ export type NativeAnalysisReport = {
 };
 
 export type ToolCapability = {
-  id: AnalysisEngineId | "python" | "docker";
+  id: AnalysisEngineId | "python" | "docker" | "solc" | "vyper" | "huffc";
   available: boolean;
   executable?: string;
   version?: string;
@@ -303,6 +331,7 @@ export type AnalysisBudget = {
 
 export type AnalysisTarget =
   | { type: "verified_source"; chainId: 1; addressRef: string; sources: Array<{ name: string; content: string }>; trustedForExecution?: boolean }
+  | { type: "runtime_bytecode"; chainId: 1; addressRef: string; runtimeBytecode: string }
   | { type: "local_project"; path: string; framework: "foundry" | "hardhat" | "unknown"; trusted: boolean };
 
 export type EngineRunResult = {
