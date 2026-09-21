@@ -201,77 +201,103 @@
   };
 }
 
-  function flattenFindings(candidate) {
-  const findings = [];
-  for (const inspection of candidate?.ethereum?.sourceInspections || []) {
-    const contractName = inspection.contractName || inspection.contractRefId || "Verified contract";
-    const contractRefId = inspection.contractRefId || "unknown";
-    const advanced = inspection.inspection?.advancedAnalysis?.findings || [];
-    const historical = new Map((inspection.inspection?.historicalIntelligence?.findings || []).map(item => [item.findingId, item]));
-
-    for (const finding of advanced) {
-      findings.push({
-        ...finding,
-        sourceLayer: "advanced",
-        contractName,
-        contractRefId,
-        sourceRole: inspection.sourceRole || (inspection.proxy ? "PROXY" : "DIRECT"),
-        compilerVersion: inspection.compilerVersion || "",
-        proxy: Boolean(inspection.proxy),
-        severity: severityOrder[finding.severity] === undefined ? "INFO" : finding.severity,
-        file: finding.primaryLocation?.file || "Structural analysis",
-        line: Number(finding.primaryLocation?.line || 0),
-        column: Number(finding.primaryLocation?.column || 0),
-        evidenceKey: findingEvidenceKey(finding),
-        historical: historical.get(`advanced:${finding.id}`) || null
-      });
-    }
-
-    for (const finding of inspection.inspection?.findings || []) {
-      if (sourceReviewOnlyExclusions.has(finding.kind)) continue;
-      if (sourceFindingShadowedByAdvanced(finding, advanced)) continue;
-      findings.push({
-        id: `source:${contractRefId}:${finding.kind}:${finding.file}:${finding.line}`,
-        kind: finding.kind,
-        engine: "native",
-        severity: legacySeverity[finding.severity] || "INFO",
-        confidence: "LOW",
-        evidenceStrength: "HEURISTIC",
-        evidenceKey: "HEURISTIC",
-        exploitabilityVerdict: "UNKNOWN",
-        title: finding.title,
-        description: finding.description,
-        limitations: ["Pattern-level source review signal; presence alone does not establish exploitability."],
-        sourceLayer: "source-review",
-        contractName,
-        contractRefId,
-        sourceRole: inspection.sourceRole || (inspection.proxy ? "PROXY" : "DIRECT"),
-        compilerVersion: inspection.compilerVersion || "",
-        proxy: Boolean(inspection.proxy),
-        file: finding.file || "Verified source",
-        line: Number(finding.line || 0),
-        column: 0,
-        historical: historical.get(`source:${finding.kind}:${finding.file}:${finding.line}`) || null
-      });
-    }
+  function inspectionSourceRole(inspection) {
+    if (inspection.sourceRole) return inspection.sourceRole;
+    return inspection.proxy ? "PROXY" : "DIRECT";
   }
 
-  const seen = new Set();
-  return findings.filter(finding => {
-    const key = [
+  function inspectionFindingContext(inspection) {
+    return {
+      contractName: inspection.contractName || inspection.contractRefId || "Verified contract",
+      contractRefId: inspection.contractRefId || "unknown",
+      sourceRole: inspectionSourceRole(inspection),
+      compilerVersion: inspection.compilerVersion || "",
+      proxy: Boolean(inspection.proxy)
+    };
+  }
+
+  function advancedUiFinding(inspection, finding, historical) {
+    return {
+      ...finding,
+      ...inspectionFindingContext(inspection),
+      sourceLayer: "advanced",
+      severity: severityOrder[finding.severity] === undefined ? "INFO" : finding.severity,
+      file: finding.primaryLocation?.file || "Structural analysis",
+      line: Number(finding.primaryLocation?.line || 0),
+      column: Number(finding.primaryLocation?.column || 0),
+      evidenceKey: findingEvidenceKey(finding),
+      historical: historical.get("advanced:" + finding.id) || null
+    };
+  }
+
+  function sourceUiFinding(inspection, finding, historical) {
+    const context = inspectionFindingContext(inspection);
+    const id = ["source", context.contractRefId, finding.kind, finding.file, finding.line].join(":");
+    const historicalId = ["source", finding.kind, finding.file, finding.line].join(":");
+    return {
+      id,
+      kind: finding.kind,
+      engine: "native",
+      severity: legacySeverity[finding.severity] || "INFO",
+      confidence: "LOW",
+      evidenceStrength: "HEURISTIC",
+      evidenceKey: "HEURISTIC",
+      exploitabilityVerdict: "UNKNOWN",
+      title: finding.title,
+      description: finding.description,
+      limitations: ["Pattern-level source review signal; presence alone does not establish exploitability."],
+      sourceLayer: "source-review",
+      ...context,
+      file: finding.file || "Verified source",
+      line: Number(finding.line || 0),
+      column: 0,
+      historical: historical.get(historicalId) || null
+    };
+  }
+
+  function includeSourceFinding(finding, advanced) {
+    return !sourceReviewOnlyExclusions.has(finding.kind) &&
+      !sourceFindingShadowedByAdvanced(finding, advanced);
+  }
+
+  function inspectionUiFindings(inspection) {
+    const advanced = inspection.inspection?.advancedAnalysis?.findings || [];
+    const historyRows = inspection.inspection?.historicalIntelligence?.findings || [];
+    const historical = new Map(historyRows.map(item => [item.findingId, item]));
+    const advancedRows = advanced.map(finding => advancedUiFinding(inspection, finding, historical));
+    const sourceRows = (inspection.inspection?.findings || [])
+      .filter(finding => includeSourceFinding(finding, advanced))
+      .map(finding => sourceUiFinding(inspection, finding, historical));
+    return [...advancedRows, ...sourceRows];
+  }
+
+  function findingDedupeKey(finding) {
+    const scope = finding.evidenceScope || finding.counterexample?.scope || "";
+    return [
       finding.contractRefId,
       finding.kind,
       finding.file,
       finding.line,
       finding.title,
       finding.evidenceKey,
-      finding.evidenceScope || finding.counterexample?.scope || ""
+      scope
     ].join("|");
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
+  }
+
+  function dedupeUiFindings(findings) {
+    const seen = new Set();
+    return findings.filter(finding => {
+      const key = findingDedupeKey(finding);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function flattenFindings(candidate) {
+    const inspections = candidate?.ethereum?.sourceInspections || [];
+    return dedupeUiFindings(inspections.flatMap(inspection => inspectionUiFindings(inspection)));
+  }
 
     function candidateEvidenceYears(candidate) {
     const years = (candidate?.evidence || []).map(e => Number(e.year)).filter(Number.isFinite);
@@ -770,135 +796,237 @@
   copy.append(details);
 }
 
-  function renderCandidateFindings(candidate) {
-  const allFindings = flattenFindings(candidate);
-  renderSeverityMetrics(allFindings);
-  syncFindingKindOptions(allFindings);
+  function renderAnalysisCompleteness(candidate) {
+    const completeness = analysisCompleteness(candidate);
+    const warning = $("candidate-analysis-warning");
+    warning.replaceChildren();
+    warning.classList.toggle("hidden", !completeness.partial);
+    if (!completeness.partial) return;
 
-  const completeness = analysisCompleteness(candidate);
-  const warning = $("candidate-analysis-warning");
-  warning.replaceChildren();
-  warning.classList.toggle("hidden", !completeness.partial);
-  if (completeness.partial) {
     warning.append(element("strong", "", "Partial analysis — absence of a finding is not a clean pass."));
     const list = element("ul");
     for (const notice of completeness.notices) list.append(element("li", "", notice));
     warning.append(list);
   }
 
-  const severityFilter = $("findings-severity-filter").value;
-  const evidenceFilter = $("findings-evidence-filter").value;
-  const kindFilter = $("findings-kind-filter").value;
-  const sort = $("findings-sort").value;
-  let findings = allFindings.filter(f =>
-    (severityFilter === "ALL" || f.severity === severityFilter) &&
-    (evidenceFilter === "ALL" || f.evidenceKey === evidenceFilter) &&
-    (kindFilter === "ALL" || f.kind === kindFilter)
-  );
-
-  findings = [...findings].sort((a, b) => {
-    if (sort === "file") {
-      const fileCompare = String(a.file).localeCompare(String(b.file));
-      if (fileCompare !== 0) return fileCompare;
-      return Number(a.line || 0) - Number(b.line || 0);
-    }
-    if (sort === "evidence") {
-      return (evidenceOrder[a.evidenceKey] ?? 99) - (evidenceOrder[b.evidenceKey] ?? 99) ||
-        (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99);
-    }
-    return (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99) ||
-      (evidenceOrder[a.evidenceKey] ?? 99) - (evidenceOrder[b.evidenceKey] ?? 99);
-  });
-
-  const root = $("candidate-findings-list");
-  root.replaceChildren();
-  $("candidate-findings-empty").classList.toggle("hidden", findings.length > 0);
-
-  const groups = new Map();
-  for (const finding of findings) {
-    const key = `${finding.contractRefId}|${finding.contractName}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(finding);
+  function activeFindingFilters() {
+    return {
+      severity: $("findings-severity-filter").value,
+      evidence: $("findings-evidence-filter").value,
+      kind: $("findings-kind-filter").value,
+      sort: $("findings-sort").value
+    };
   }
 
-  for (const group of groups.values()) {
-    const first = group[0];
-    const groupRoot = element("section", "finding-contract-group");
+  function findingMatchesFilters(finding, filters) {
+    const severityMatches = filters.severity === "ALL" || finding.severity === filters.severity;
+    const evidenceMatches = filters.evidence === "ALL" || finding.evidenceKey === filters.evidence;
+    const kindMatches = filters.kind === "ALL" || finding.kind === filters.kind;
+    return severityMatches && evidenceMatches && kindMatches;
+  }
+
+  function sortFindings(findings, sort) {
+    const rows = [...findings];
+    if (sort === "file") {
+      return rows.sort((a, b) => {
+        const fileCompare = String(a.file).localeCompare(String(b.file));
+        return fileCompare || Number(a.line || 0) - Number(b.line || 0);
+      });
+    }
+    if (sort === "evidence") {
+      return rows.sort((a, b) =>
+        (evidenceOrder[a.evidenceKey] ?? 99) - (evidenceOrder[b.evidenceKey] ?? 99) ||
+        (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99)
+      );
+    }
+    return rows.sort((a, b) =>
+      (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99) ||
+      (evidenceOrder[a.evidenceKey] ?? 99) - (evidenceOrder[b.evidenceKey] ?? 99)
+    );
+  }
+
+  function groupFindingsByContract(findings) {
+    const groups = new Map();
+    for (const finding of findings) {
+      const key = finding.contractRefId + "|" + finding.contractName;
+      const current = groups.get(key) || [];
+      current.push(finding);
+      groups.set(key, current);
+    }
+    return [...groups.values()];
+  }
+
+  function findingContractSubtitle(finding) {
+    const role = finding.sourceRole || "DIRECT";
+    return finding.compilerVersion ? role + " · " + finding.compilerVersion : role;
+  }
+
+  function pluralizedFindingCount(count) {
+    return count + (count === 1 ? " finding" : " findings");
+  }
+
+  function createFindingGroupHeader(first, count) {
     const header = element("div", "finding-contract-header");
     const headerCopy = element("div");
     headerCopy.append(
       element("h3", "", first.contractName),
-      element("small", "", `${first.sourceRole || "DIRECT"}${first.compilerVersion ? ` · ${first.compilerVersion}` : ""}`)
+      element("small", "", findingContractSubtitle(first))
     );
-    header.append(headerCopy, element("strong", "", `${group.length} finding${group.length === 1 ? "" : "s"}`));
-    groupRoot.append(header);
-
-    for (const finding of group) {
-      const card = element("article", "finding-card finding-card-detailed");
-      const severity = element("div", `severity-block ${String(finding.severity).toLowerCase()}`);
-      severity.append(element("strong", "", finding.severity), element("span", "", findingIcon(finding.severity)));
-
-      const copy = element("div", "finding-copy");
-      const heading = element("div", "finding-heading-row");
-      heading.append(element("h3", "", finding.title));
-      const badges = element("div", "finding-badges");
-      badges.append(
-        element("span", `finding-badge evidence ${String(finding.evidenceKey).toLowerCase()}`, findingEvidenceLabel(finding)),
-        element("span", "finding-badge", humanize(finding.kind))
-      );
-      heading.append(badges);
-      copy.append(heading, element("p", "", finding.description));
-
-      const meta = element("div", "finding-meta-grid");
-      const metaValues = [
-        ["Confidence", humanize(finding.confidence || "unknown")],
-        ["Engine", humanize(finding.engine || "native")],
-        ["Exploitability", humanize(finding.exploitabilityVerdict || "unknown")],
-        ["External reachability", finding.reachableFromExternalEntry === undefined ? "Unknown" : finding.reachableFromExternalEntry ? "Yes" : "No"]
-      ];
-      for (const [label, value] of metaValues) {
-        const item = element("div", "finding-meta-item");
-        item.append(element("span", "", label), element("strong", "", value));
-        meta.append(item);
-      }
-      copy.append(meta);
-
-      if (finding.remediation) {
-        const guidance = element("div", "finding-guidance");
-        guidance.append(element("strong", "", "Recommended remediation"), element("p", "", finding.remediation));
-        copy.append(guidance);
-      }
-      if (finding.historical?.analogues?.length) {
-        const history = element("div", "finding-history");
-        history.append(
-          element("strong", "", "Historical Audit Intelligence"),
-          element("p", "", `${humanize(finding.historical.predictedCategory)} · ${Math.round(Number(finding.historical.categoryConfidence || 0) * 100)}% category confidence · review-priority context ${finding.historical.historicalRiskScore}/100 · ${finding.historical.analogues.length} analogue${finding.historical.analogues.length === 1 ? "" : "s"}. Supporting context only.`)
-        );
-        copy.append(history);
-      }
-
-      appendFindingDetails(copy, "Detected mitigations", (finding.mitigations || []).map(item => `${humanize(item.kind)}${item.evidence ? ` — ${item.evidence}` : ""}`));
-      appendFindingDetails(copy, "Witness path", (finding.witnessPath || []).map(step => `${humanize(step.role)} · ${step.symbol} · ${step.location?.file || "unknown"}:${step.location?.line || 0}`));
-      appendFindingDetails(copy, "Counterexample", finding.counterexample ? [
-        finding.counterexample.observedViolation,
-        ...(finding.counterexample.sequence || []).map((step, index) => `${index + 1}. ${step}`),
-        finding.counterexample.seed !== undefined ? `Seed: ${finding.counterexample.seed}` : "",
-        finding.counterexample.blockNumber !== undefined ? `Pinned block: ${finding.counterexample.blockNumber}` : ""
-      ] : []);
-      appendFindingDetails(copy, "Limitations", finding.limitations || []);
-
-      const side = element("div", "finding-side");
-      side.append(
-        element("div", "finding-location", finding.line > 0 ? `${finding.file} · line ${finding.line}${finding.column ? `:${finding.column}` : ""}` : finding.file),
-        element("div", "", first.contractName),
-        element("span", "kind-chip", finding.sourceLayer === "advanced" ? "Advanced analysis" : "Source review")
-      );
-      card.append(severity, copy, side);
-      groupRoot.append(card);
-    }
-    root.append(groupRoot);
+    header.append(headerCopy, element("strong", "", pluralizedFindingCount(count)));
+    return header;
   }
-}
+
+  function externalReachabilityValue(finding) {
+    if (finding.reachableFromExternalEntry === undefined) return "Unknown";
+    return finding.reachableFromExternalEntry ? "Yes" : "No";
+  }
+
+  function createFindingMeta(finding) {
+    const meta = element("div", "finding-meta-grid");
+    const values = [
+      ["Confidence", humanize(finding.confidence || "unknown")],
+      ["Engine", humanize(finding.engine || "native")],
+      ["Exploitability", humanize(finding.exploitabilityVerdict || "unknown")],
+      ["External reachability", externalReachabilityValue(finding)]
+    ];
+    for (const [label, value] of values) {
+      const item = element("div", "finding-meta-item");
+      item.append(element("span", "", label), element("strong", "", value));
+      meta.append(item);
+    }
+    return meta;
+  }
+
+  function appendFindingRemediation(copy, finding) {
+    if (!finding.remediation) return;
+    const guidance = element("div", "finding-guidance");
+    guidance.append(
+      element("strong", "", "Recommended remediation"),
+      element("p", "", finding.remediation)
+    );
+    copy.append(guidance);
+  }
+
+  function historicalSummary(finding) {
+    const history = finding.historical;
+    if (!history?.analogues?.length) return "";
+    const category = humanize(history.predictedCategory);
+    const confidence = Math.round(Number(history.categoryConfidence || 0) * 100);
+    const analogueLabel = history.analogues.length === 1 ? " analogue" : " analogues";
+    return category + " · " + confidence + "% category confidence · review-priority context " +
+      history.historicalRiskScore + "/100 · " + history.analogues.length + analogueLabel +
+      ". Supporting context only.";
+  }
+
+  function appendFindingHistory(copy, finding) {
+    const summary = historicalSummary(finding);
+    if (!summary) return;
+    const history = element("div", "finding-history");
+    history.append(
+      element("strong", "", "Historical Audit Intelligence"),
+      element("p", "", summary)
+    );
+    copy.append(history);
+  }
+
+  function mitigationDetailRows(finding) {
+    return (finding.mitigations || []).map(item => {
+      const evidence = item.evidence ? " — " + item.evidence : "";
+      return humanize(item.kind) + evidence;
+    });
+  }
+
+  function witnessDetailRows(finding) {
+    return (finding.witnessPath || []).map(step => {
+      const file = step.location?.file || "unknown";
+      const line = step.location?.line || 0;
+      return humanize(step.role) + " · " + step.symbol + " · " + file + ":" + line;
+    });
+  }
+
+  function counterexampleDetailRows(finding) {
+    const counterexample = finding.counterexample;
+    if (!counterexample) return [];
+    const rows = [];
+    if (counterexample.observedViolation) rows.push(counterexample.observedViolation);
+    rows.push(...(counterexample.sequence || []).map((step, index) => (index + 1) + ". " + step));
+    if (counterexample.seed !== undefined) rows.push("Seed: " + counterexample.seed);
+    if (counterexample.blockNumber !== undefined) rows.push("Pinned block: " + counterexample.blockNumber);
+    return rows;
+  }
+
+  function findingLocationValue(finding) {
+    if (finding.line <= 0) return finding.file;
+    const column = finding.column ? ":" + finding.column : "";
+    return finding.file + " · line " + finding.line + column;
+  }
+
+  function findingLayerLabel(finding) {
+    return finding.sourceLayer === "advanced" ? "Advanced analysis" : "Source review";
+  }
+
+  function createFindingCard(finding) {
+    const card = element("article", "finding-card finding-card-detailed");
+    const severityClass = "severity-block " + String(finding.severity).toLowerCase();
+    const severity = element("div", severityClass);
+    severity.append(
+      element("strong", "", finding.severity),
+      element("span", "", findingIcon(finding.severity))
+    );
+
+    const copy = element("div", "finding-copy");
+    const heading = element("div", "finding-heading-row");
+    heading.append(element("h3", "", finding.title));
+    const badges = element("div", "finding-badges");
+    const evidenceClass = "finding-badge evidence " + String(finding.evidenceKey).toLowerCase();
+    badges.append(
+      element("span", evidenceClass, findingEvidenceLabel(finding)),
+      element("span", "finding-badge", humanize(finding.kind))
+    );
+    heading.append(badges);
+    copy.append(heading, element("p", "", finding.description), createFindingMeta(finding));
+
+    appendFindingRemediation(copy, finding);
+    appendFindingHistory(copy, finding);
+    appendFindingDetails(copy, "Detected mitigations", mitigationDetailRows(finding));
+    appendFindingDetails(copy, "Witness path", witnessDetailRows(finding));
+    appendFindingDetails(copy, "Counterexample", counterexampleDetailRows(finding));
+    appendFindingDetails(copy, "Limitations", finding.limitations || []);
+
+    const side = element("div", "finding-side");
+    side.append(
+      element("div", "finding-location", findingLocationValue(finding)),
+      element("div", "", finding.contractName),
+      element("span", "kind-chip", findingLayerLabel(finding))
+    );
+    card.append(severity, copy, side);
+    return card;
+  }
+
+  function createFindingGroup(group) {
+    const root = element("section", "finding-contract-group");
+    root.append(createFindingGroupHeader(group[0], group.length));
+    for (const finding of group) root.append(createFindingCard(finding));
+    return root;
+  }
+
+  function renderCandidateFindings(candidate) {
+    const allFindings = flattenFindings(candidate);
+    renderSeverityMetrics(allFindings);
+    syncFindingKindOptions(allFindings);
+    renderAnalysisCompleteness(candidate);
+
+    const filters = activeFindingFilters();
+    const matches = allFindings.filter(finding => findingMatchesFilters(finding, filters));
+    const findings = sortFindings(matches, filters.sort);
+    const root = $("candidate-findings-list");
+    root.replaceChildren();
+    $("candidate-findings-empty").classList.toggle("hidden", findings.length > 0);
+
+    for (const group of groupFindingsByContract(findings)) {
+      root.append(createFindingGroup(group));
+    }
+  }
 
     function evidenceIcon(kind) {
     if (kind === "historical_incident") return "!";
