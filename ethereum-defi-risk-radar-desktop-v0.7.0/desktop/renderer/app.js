@@ -1298,6 +1298,7 @@
       return;
     }
     renderCandidateHeader(candidate);
+    renderCandidateWatch(candidate);
     renderCandidateOverview(candidate);
     renderCandidateIntelligence(candidate);
     renderCandidateFindings(candidate);
@@ -1443,6 +1444,7 @@
     $("settings-max-findings").value = String(s.maxSourceFindingsPerContract);
     $("settings-output-dir").value = s.outputDir;
     $("settings-remove-etherscan").classList.toggle("hidden", !s.hasEtherscanApiKey);
+    $("settings-remove-rpc").classList.toggle("hidden", !s.hasEthereumRpcUrl);
     updateConnectionUI();
     renderCliStatus();
     renderAnalysisCapabilities();
@@ -1483,12 +1485,14 @@
 
   function openKeyModal(provider) {
     state.keyModalProvider = provider;
-    const name = provider === "tinyfish" ? "TinyFish" : "Etherscan";
-    $("key-modal-title").textContent = `Replace ${name} API Key`;
+    const name = provider === "tinyfish" ? "TinyFish" : provider === "etherscan" ? "Etherscan" : "Ethereum Mainnet RPC";
+    $("key-modal-title").textContent = provider === "rpc" ? "Configure Ethereum Mainnet RPC" : "Replace " + name + " API Key";
     $("key-modal-description").textContent = provider === "tinyfish"
       ? "Enter a new TinyFish key. The existing encrypted key will be replaced after you save."
-      : "Enter a new Etherscan key. The existing encrypted key will be replaced after you save.";
-    $("key-modal-label").textContent = `${name} API Key`;
+      : provider === "etherscan"
+        ? "Enter a new Etherscan key. The existing encrypted key will be replaced after you save."
+        : "Enter an HTTPS Ethereum Mainnet RPC URL. It is encrypted with OS-backed storage and used only through the read-only RPC allowlist.";
+    $("key-modal-label").textContent = provider === "rpc" ? "Ethereum Mainnet RPC URL" : name + " API Key";
     $("key-modal-input").value = "";
     $("key-modal-error").classList.add("hidden");
     openModal("key-modal");
@@ -1502,13 +1506,23 @@
     $("key-modal-save").disabled = true;
     $("key-modal-error").classList.add("hidden");
     try {
-      const payload = state.keyModalProvider === "tinyfish" ? { tinyfishApiKey: key } : { etherscanApiKey: key };
+      const payload =
+        state.keyModalProvider === "tinyfish"
+          ? { tinyfishApiKey: key }
+          : state.keyModalProvider === "etherscan"
+            ? { etherscanApiKey: key }
+            : { ethereumRpcUrl: key };
       state.settings = await api.saveSettings(payload);
       state.connection[state.keyModalProvider] = "configured";
       renderSettings();
       updateConnectionUI();
       closeModal("key-modal");
-      showToast(`${state.keyModalProvider === "tinyfish" ? "TinyFish" : "Etherscan"} API key replaced securely.`, "success");
+      showToast(
+        state.keyModalProvider === "rpc"
+          ? "Ethereum Mainnet RPC saved securely."
+          : (state.keyModalProvider === "tinyfish" ? "TinyFish" : "Etherscan") + " API key replaced securely.",
+        "success"
+      );
     } catch (error) {
       $("key-modal-error").textContent = error?.message || String(error);
       $("key-modal-error").classList.remove("hidden");
@@ -1530,6 +1544,89 @@
       showToast(error?.message || String(error), "error");
     } finally {
       $("confirm-remove-etherscan").disabled = false;
+    }
+  }
+
+  async function removeRpcUrl() {
+    $("confirm-remove-rpc").disabled = true;
+    try {
+      state.settings = await api.saveSettings({ clearEthereumRpcUrl: true });
+      state.connection.rpc = "optional";
+      renderSettings();
+      updateConnectionUI();
+      closeModal("confirm-rpc-modal");
+      showToast("Ethereum RPC removed. Pinned state and monitoring are disabled.", "success");
+    } catch (error) {
+      showToast(error?.message || String(error), "error");
+    } finally {
+      $("confirm-remove-rpc").disabled = false;
+    }
+  }
+
+  function candidateWatch(candidate) {
+    return state.monitors.find(watch => watch.protocolId === candidate?.id);
+  }
+
+  function renderCandidateWatch(candidate) {
+    const watch = candidateWatch(candidate);
+    const configured = Boolean(state.settings?.hasEthereumRpcUrl);
+    $("candidate-watch-status").textContent = watch
+      ? "Watching every " + watch.intervalMinutes + "m"
+      : configured ? "Not watched" : "RPC required";
+    $("candidate-watch-status").className = "connected-badge " + (watch ? "" : "neutral");
+    $("candidate-watch").textContent = watch ? "↻ Run Watch Now" : "◎ Watch Protocol";
+    $("candidate-watch").disabled = !configured;
+    $("candidate-unwatch").classList.toggle("hidden", !watch);
+  }
+
+  async function refreshMonitors() {
+    try {
+      const registry = await api.listMonitors();
+      state.monitors = registry?.watches || [];
+    } catch {
+      state.monitors = [];
+    }
+    if (state.selectedCandidate) renderCandidateWatch(state.selectedCandidate);
+  }
+
+  async function toggleCandidateWatchRun() {
+    const candidate = state.selectedCandidate;
+    if (!candidate) return;
+    if (!state.settings?.hasEthereumRpcUrl) {
+      showToast("Configure a read-only Ethereum Mainnet RPC in Settings first.", "error");
+      showScreen("settings");
+      return;
+    }
+    const watch = candidateWatch(candidate);
+    try {
+      if (watch) {
+        const result = await api.runMonitorNow(watch.id);
+        const changed = Boolean(result?.diff?.changed);
+        showToast(
+          changed
+            ? "Protocol watch found " + result.diff.changes.length + " state change(s)."
+            : "Protocol watch completed with no monitored changes.",
+          changed ? "error" : "success"
+        );
+      } else {
+        await api.watchCandidate({ candidateId: candidate.id, intervalMinutes: 15 });
+        showToast("Protocol watch enabled at a 15-minute interval.", "success");
+      }
+      await refreshMonitors();
+    } catch (error) {
+      showToast(error?.message || String(error), "error");
+    }
+  }
+
+  async function stopCandidateWatch() {
+    const watch = candidateWatch(state.selectedCandidate);
+    if (!watch) return;
+    try {
+      await api.removeMonitor(watch.id);
+      await refreshMonitors();
+      showToast("Protocol watch removed.", "success");
+    } catch (error) {
+      showToast(error?.message || String(error), "error");
     }
   }
 
