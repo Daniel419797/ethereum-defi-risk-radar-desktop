@@ -275,6 +275,7 @@ export type BenchmarkMetrics = {
   truePositive: number;
   falsePositive: number;
   falseNegative: number;
+  trueNegative: number;
   precision: number;
   recall: number;
   f1: number;
