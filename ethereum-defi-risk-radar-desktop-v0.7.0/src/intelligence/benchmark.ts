@@ -199,6 +199,16 @@ export function evaluateBenchmark(
     predictions.map(prediction => [prediction.caseId, prediction])
   );
 
+  const categoryUniverse = new Set<string>();
+  for (const item of cases) {
+    for (const label of item.labels) {
+      categoryUniverse.add(normalizedCategory(label.category));
+    }
+    for (const finding of byPrediction.get(item.id)?.findings || []) {
+      categoryUniverse.add(normalizedCategory(finding.category));
+    }
+  }
+
   let truePositive = 0;
   let falsePositive = 0;
   let falseNegative = 0;
@@ -212,34 +222,22 @@ export function evaluateBenchmark(
 
   for (const item of cases) {
     const prediction = byPrediction.get(item.id);
-    const expected = item.labels.map(label =>
-      normalizedCategory(label.category)
+    const expected = new Set(
+      item.labels.map(label => normalizedCategory(label.category))
     );
-    const predicted =
-      prediction?.findings.map(finding =>
+    const predicted = new Set(
+      (prediction?.findings || []).map(finding =>
         normalizedCategory(finding.category)
-      ) || [];
+      )
+    );
 
-    const expectedPositive = expected.length > 0;
-    const predictedPositive = predicted.length > 0;
-
-    if (expectedPositive && predictedPositive) {
-      const categoryMatch =
-        item.reproducibleExploit && expected.includes("historical_exploit")
-          ? true
-          : predicted.some(category => expected.includes(category));
-      if (categoryMatch) {
-        truePositive += 1;
-      } else {
-        falsePositive += 1;
-        falseNegative += 1;
-      }
-    } else if (expectedPositive) {
-      falseNegative += 1;
-    } else if (predictedPositive) {
-      falsePositive += 1;
-    } else {
-      trueNegative += 1;
+    for (const category of categoryUniverse) {
+      const expectedPositive = expected.has(category);
+      const predictedPositive = predicted.has(category);
+      if (expectedPositive && predictedPositive) truePositive += 1;
+      else if (!expectedPositive && predictedPositive) falsePositive += 1;
+      else if (expectedPositive && !predictedPositive) falseNegative += 1;
+      else trueNegative += 1;
     }
 
     for (const label of item.labels) {
@@ -293,13 +291,18 @@ export function evaluateBenchmark(
     corpusCommits: BENCHMARK_CORPUS_COMMITS,
     generatedAt: new Date().toISOString(),
     caseCount: cases.length,
-    labeledPositiveCount: cases.filter(item => item.labels.length > 0).length,
-    predictedPositiveCount: cases.filter(
-      item => (byPrediction.get(item.id)?.findings.length || 0) > 0
-    ).length,
+    labeledPositiveCount: cases.reduce(
+      (sum, item) => sum + item.labels.length,
+      0
+    ),
+    predictedPositiveCount: cases.reduce(
+      (sum, item) => sum + (byPrediction.get(item.id)?.findings.length || 0),
+      0
+    ),
     truePositive,
     falsePositive,
     falseNegative,
+    trueNegative,
     precision,
     recall,
     f1,
@@ -333,6 +336,7 @@ export function benchmarkMarkdown(metrics: BenchmarkMetrics) {
     "| True positives | " + metrics.truePositive + " |",
     "| False positives | " + metrics.falsePositive + " |",
     "| False negatives | " + metrics.falseNegative + " |",
+    "| True negatives | " + metrics.trueNegative + " |",
     "| Precision | " + percent(metrics.precision) + " |",
     "| Recall | " + percent(metrics.recall) + " |",
     "| F1 | " + percent(metrics.f1) + " |",
