@@ -251,6 +251,7 @@
             <button id="results-show-summary-csv" class="secondary-button" type="button">Summary CSV</button>
             <button id="results-show-findings-csv" class="secondary-button" type="button">Findings CSV</button>
             <button id="results-show-security-html" class="secondary-button" type="button">Security HTML</button>
+            <button id="results-show-sarif" class="secondary-button" type="button">SARIF</button>
           </div>
         </article>
       </section>
@@ -272,6 +273,7 @@
 
         <div class="candidate-tabs" role="tablist">
           <button class="candidate-tab active" type="button" data-candidate-tab="overview">Overview</button>
+          <button class="candidate-tab" type="button" data-candidate-tab="intelligence">Protocol Intelligence <span id="candidate-intelligence-count" class="tab-count">0</span></button>
           <button class="candidate-tab" type="button" data-candidate-tab="findings">Security Findings <span id="candidate-findings-count" class="tab-count">0</span></button>
           <button class="candidate-tab" type="button" data-candidate-tab="evidence">Public Evidence <span id="candidate-evidence-count" class="tab-count">0</span></button>
         </div>
@@ -288,6 +290,38 @@
             <p id="candidate-interpretation"></p>
             <p>This classification reflects public historical or structural signals. It does not establish current exploitability.</p>
           </article>
+        </div>
+
+        <div id="candidate-tab-intelligence" class="candidate-tab-panel hidden">
+          <div id="candidate-intelligence-metrics" class="metric-grid six compact"></div>
+          <div id="candidate-intelligence-empty" class="empty-state hidden"><div class="empty-icon">⌁</div><strong>No protocol intelligence bundle</strong><span>Verified-source analysis is required before the graph and invariant engine can produce protocol intelligence.</span></div>
+
+          <div id="candidate-intelligence-content" class="intelligence-layout">
+            <article class="panel intelligence-panel">
+              <div class="panel-title-row"><div><h2>Protocol Knowledge Graph</h2><p>Source-linked contracts, dependencies, assets, calls and findings.</p></div><span id="candidate-graph-digest" class="phase-badge">—</span></div>
+              <div id="candidate-graph-list" class="graph-edge-list"></div>
+            </article>
+
+            <article class="panel intelligence-panel">
+              <div class="panel-title-row"><div><h2>Bytecode Attestation</h2><p>Deployed runtime observation and exact-source recompilation status.</p></div></div>
+              <div id="candidate-attestation-list" class="attestation-list"></div>
+            </article>
+
+            <article class="panel intelligence-panel full-span">
+              <div class="panel-title-row"><div><h2>Applicable DeFi Invariants</h2><p>Protocol-aware properties selected from source categories and security signals.</p></div></div>
+              <div id="candidate-invariant-list" class="invariant-grid"></div>
+            </article>
+
+            <article class="panel intelligence-panel full-span">
+              <div class="panel-title-row"><div><h2>Attack Paths</h2><p>Auditable source-to-impact paths derived from witness/evidence chains. Evidence labels remain separate from severity.</p></div></div>
+              <div id="candidate-attack-paths" class="attack-path-list"></div>
+            </article>
+
+            <article class="panel intelligence-panel full-span">
+              <div class="panel-title-row"><div><h2>Pinned State Snapshot</h2><p>Canonical Ethereum Mainnet block, code fingerprints and EIP-1967 proxy-control surfaces.</p></div><span id="candidate-snapshot-block" class="phase-badge">NOT CAPTURED</span></div>
+              <div id="candidate-snapshot-list" class="snapshot-grid"></div>
+            </article>
+          </div>
         </div>
 
         <div id="candidate-tab-findings" class="candidate-tab-panel hidden">
