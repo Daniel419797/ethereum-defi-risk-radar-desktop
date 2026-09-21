@@ -899,11 +899,13 @@ Usage:
 Commands:
   scan                  Run a defensive Ethereum Mainnet research scan
   status                Show configuration and CLI installation status
-  test-connections      Test TinyFish and optional Etherscan credentials
+  test-connections      Test TinyFish, Etherscan and read-only Mainnet RPC
   config show           Show saved non-secret configuration
-  config set <key> <v>  Update a saved setting (API keys prompt securely)
+  config set <key> <v>  Update a saved setting (secrets prompt securely)
   config remove etherscan-key
                         Remove the optional Etherscan credential
+  config remove rpc-url
+                        Remove the encrypted read-only Ethereum RPC URL
   reports               List recent generated reports
   open-reports          Open the configured reports directory
   install-cli           Install/repair the global risk-radar command
@@ -918,6 +920,17 @@ Commands:
                         Run scenario packs against a source-linked protocol model
   replay-fork <spec.json> --confirm-fork
                         Replay transactions on a pinned loopback Anvil fork
+  snapshot-state <spec.json> [--out=<file>]
+                        Capture canonical code/proxy/probe state at a pinned block
+  upgrade-diff <before.json> <after.json> [--out=<file>]
+                        Compare historical protocol snapshots
+  monitor list
+  monitor add <name> <spec.json>
+  monitor remove <id-or-name>
+  monitor run <id-or-name|--all>
+                        Maintain and execute persistent protocol watches
+  benchmark <smartbugs|cve|defihacklabs> <corpus-root>
+                        Run an evidence-grade pinned-corpus benchmark
   version               Print the application version
   help                  Show this help
 
@@ -935,6 +948,7 @@ Project analysis options:
 Configuration keys:
   tinyfish-key          Secure TinyFish API key (interactive prompt)
   etherscan-key         Secure Etherscan API key (interactive prompt)
+  rpc-url               Secure read-only Ethereum Mainnet RPC URL (interactive prompt)
   endpoint              TinyFish Search endpoint
   pages                 Default pages per query
   min-signals           Minimum public signals
@@ -992,6 +1006,7 @@ async function cliConfigShow() {
   console.log(JSON.stringify({
     tinyfishApiKey: settings.hasTinyfishApiKey ? "configured" : "missing",
     etherscanApiKey: settings.hasEtherscanApiKey ? "configured" : "not configured",
+    ethereumRpcUrl: settings.hasEthereumRpcUrl ? "configured" : "not configured",
     tinyfishEndpoint: settings.tinyfishEndpoint,
     maxPagesPerQuery: settings.maxPagesPerQuery,
     minPublicSignals: settings.minPublicSignals,
@@ -1007,11 +1022,23 @@ async function cliConfigShow() {
 async function cliConfigSet(args: string[]) {
   const key = args[0];
   if (!key) throw new Error("Usage: risk-radar config set <key> <value>");
-  if (key === "tinyfish-key" || key === "etherscan-key") {
-    const secret = await promptSecret(key === "tinyfish-key" ? "TinyFish API key" : "Etherscan API key");
-    if (!secret) throw new Error("API key cannot be empty.");
-    await saveSettings(key === "tinyfish-key" ? { tinyfishApiKey: secret } : { etherscanApiKey: secret });
-    console.log(`${key} saved with OS-backed encryption.`);
+  if (key === "tinyfish-key" || key === "etherscan-key" || key === "rpc-url") {
+    const label =
+      key === "tinyfish-key"
+        ? "TinyFish API key"
+        : key === "etherscan-key"
+          ? "Etherscan API key"
+          : "Ethereum Mainnet RPC URL";
+    const secret = await promptSecret(label);
+    if (!secret) throw new Error(label + " cannot be empty.");
+    const payload =
+      key === "tinyfish-key"
+        ? { tinyfishApiKey: secret }
+        : key === "etherscan-key"
+          ? { etherscanApiKey: secret }
+          : { ethereumRpcUrl: secret };
+    await saveSettings(payload);
+    console.log(key + " saved with OS-backed encryption.");
     return;
   }
 
@@ -1071,6 +1098,7 @@ async function cliScan(args: string[]) {
 
   const tinyfish = new TinyFishSearchClient({ apiKey: cfg.tinyfishApiKey, endpoint: cfg.preferences.tinyfishEndpoint });
   const etherscan = cfg.etherscanApiKey ? new EtherscanClient(cfg.etherscanApiKey) : undefined;
+  const chainReader = cfg.ethereumRpcUrl ? new ReadOnlyEthereumRpcClient(cfg.ethereumRpcUrl) : undefined;
   console.log(`Ethereum DeFi Risk Radar v${app.getVersion()}`);
   console.log(`Ethereum Mainnet (chain 1) · ${startYear}-${endYear}`);
   console.log(`TinyFish pages/query: ${pagesPerQuery} · Etherscan: ${etherscan ? "ON" : "OFF"} · verified-source inspection: ${etherscan && cfg.preferences.inspectVerifiedSource ? "ON" : "OFF"}`);
@@ -1087,6 +1115,8 @@ async function cliScan(args: string[]) {
     inspectVerifiedSource: cfg.preferences.inspectVerifiedSource,
     maxSourceBytes: cfg.preferences.maxSourceBytes,
     maxSourceFindings: cfg.preferences.maxSourceFindingsPerContract,
+    chainReader,
+    attestBytecode: Boolean(chainReader),
     onProgress: quiet ? undefined : message => console.log(message),
     onProgressEvent: quiet ? event => {
       if (event.overallPercent === 70 || event.overallPercent === 95) console.log(`${event.overallPercent}% · ${event.message}`);
@@ -1107,6 +1137,7 @@ async function cliScan(args: string[]) {
   })));
   console.log(`JSON: ${paths.jsonPath}`);
   console.log(`CSV:  ${paths.csvPath}`);
+  console.log(`SARIF: ${paths.sarifPath}`);
 }
 
 async function cliDoctor() {
@@ -1127,6 +1158,7 @@ async function cliDoctor() {
     ["Secure storage", settings.secureStorageAvailable ? "available" : "unavailable", settings.secureStorageAvailable],
     ["TinyFish key", settings.hasTinyfishApiKey ? "configured" : "missing", settings.hasTinyfishApiKey],
     ["Etherscan key", settings.hasEtherscanApiKey ? "configured" : "optional / not configured", true],
+    ["Ethereum RPC", settings.hasEthereumRpcUrl ? "configured for read-only state intelligence" : "optional / not configured", true],
     ["Reports directory", outputWritable ? "writable" : "not writable", outputWritable],
     ["Global CLI", cli.installed ? cli.commandPath : "not installed", cli.installed]
   ] as Array<[string, string, boolean]>;
