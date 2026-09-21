@@ -40,7 +40,7 @@ jobs:
           cache-dependency-path: ethereum-defi-risk-radar-desktop-v0.7.0/package-lock.json
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Repository gates
         run: npm run check
