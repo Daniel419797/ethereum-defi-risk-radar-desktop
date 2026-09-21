@@ -113,7 +113,8 @@ export type BytecodeAttestation = {
 export type SnapshotStorageObservation = {
   slot: string;
   label: string;
-  value: string;
+  valueSha256: string;
+  decodedAddressRef?: string;
 };
 
 export type SnapshotCallObservation = {
