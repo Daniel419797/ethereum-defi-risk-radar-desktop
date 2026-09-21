@@ -699,6 +699,7 @@
     $("candidate-host-link").disabled = !(candidate.evidence || []).some(e => e.sourceUrl);
     const findings = flattenFindings(candidate);
     $("candidate-findings-count").textContent = String(findings.length);
+    $("candidate-intelligence-count").textContent = String(candidate.ethereum?.intelligence?.invariants?.length || 0);
     $("candidate-evidence-count").textContent = String((candidate.evidence || []).length);
   }
 
@@ -733,6 +734,184 @@
       : "The protocol has public signals, but they currently fall below the higher research-priority thresholds.";
   $("candidate-interpretation").textContent = description;
 }
+
+  function shortDigest(value) {
+    if (!value) return "—";
+    return value.length > 24 ? value.slice(0, 12) + "…" + value.slice(-8) : value;
+  }
+
+  function intelligenceStatusClass(status) {
+    if (status === "SOURCE_RECOMPILED_EXACT" || status === "SOURCE_RECOMPILED_METADATA_EQUIVALENT") return "good";
+    if (status === "RECOMPILE_MISMATCH") return "bad";
+    return "neutral";
+  }
+
+  function renderKnowledgeGraph(intelligence) {
+    const root = $("candidate-graph-list");
+    root.replaceChildren();
+    const nodes = new Map((intelligence?.graph?.nodes || []).map(node => [node.id, node]));
+    const edges = intelligence?.graph?.edges || [];
+    $("candidate-graph-digest").textContent = shortDigest(intelligence?.graph?.digest || "");
+
+    for (const edge of edges.slice(0, 28)) {
+      const from = nodes.get(edge.from);
+      const to = nodes.get(edge.to);
+      const row = element("div", "graph-edge-row");
+      row.append(
+        element("span", "graph-node-pill", from?.label || edge.from),
+        element("span", "graph-edge-kind", humanize(edge.kind)),
+        element("span", "graph-node-pill", to?.label || edge.to)
+      );
+      root.append(row);
+    }
+    if (!edges.length) root.append(element("div", "empty-inline", "No resolved graph edges."));
+    if (edges.length > 28) root.append(element("small", "intelligence-more", "+" + (edges.length - 28) + " additional graph edges"));
+  }
+
+  function renderAttestations(candidate) {
+    const root = $("candidate-attestation-list");
+    root.replaceChildren();
+    const inspections = candidate.ethereum?.sourceInspections || [];
+    for (const inspection of inspections) {
+      const attestation = inspection.bytecodeAttestation;
+      const card = element("article", "attestation-card");
+      const head = element("div", "attestation-head");
+      head.append(
+        element("strong", "", inspection.contractName || inspection.contractRefId),
+        element("span", "test-result " + intelligenceStatusClass(attestation?.status), humanize(attestation?.status || "not captured"))
+      );
+      card.append(
+        head,
+        element("small", "", (inspection.sourceRole || "DIRECT") + " · " + (inspection.compilerVersion || "compiler unknown"))
+      );
+      if (attestation) {
+        card.append(
+          element("code", "attestation-hash", shortDigest(attestation.observedRuntimeHash || "")),
+          element("p", "", attestation.observedRuntimeBytes + " runtime bytes · " + (attestation.metadataStripped ? "metadata-normalized comparison" : "raw runtime comparison"))
+        );
+        for (const note of attestation.limitations || []) card.append(element("small", "attestation-note", note));
+      } else {
+        card.append(element("p", "", "No RPC-backed bytecode observation was captured for this scan."));
+      }
+      root.append(card);
+    }
+    if (!inspections.length) root.append(element("div", "empty-inline", "No inspected contracts."));
+  }
+
+  function renderInvariants(intelligence) {
+    const root = $("candidate-invariant-list");
+    root.replaceChildren();
+    for (const selected of intelligence?.invariants || []) {
+      const invariant = selected.invariant;
+      const card = element("article", "invariant-card");
+      const head = element("div", "invariant-head");
+      head.append(
+        element("span", "finding-badge", invariant.category),
+        element("span", "finding-badge evidence structural", selected.confidence + " CONFIDENCE")
+      );
+      card.append(
+        head,
+        element("h3", "", invariant.title),
+        element("p", "", invariant.statement),
+        element("small", "", "If violated: " + invariant.severityIfViolated + " · " + invariant.executionKinds.map(humanize).join(" → ")),
+        element("small", "invariant-rationale", selected.rationale.join(" · "))
+      );
+      root.append(card);
+    }
+    if (!(intelligence?.invariants || []).length) root.append(element("div", "empty-inline", "No protocol-specific invariants selected."));
+  }
+
+  function renderAttackPaths(intelligence) {
+    const root = $("candidate-attack-paths");
+    root.replaceChildren();
+    const plans = new Map((intelligence?.escalationPlans || []).map(plan => [plan.findingId, plan]));
+    for (const path of intelligence?.attackPaths || []) {
+      const card = element("article", "attack-path-card");
+      const head = element("div", "attack-path-head");
+      head.append(
+        element("h3", "", path.title),
+        element("span", "finding-badge", path.severity),
+        element("span", "finding-badge evidence " + String(path.evidenceStrength).toLowerCase(), humanize(path.evidenceStrength))
+      );
+      card.append(head);
+
+      const flow = element("div", "attack-path-flow");
+      path.nodes.forEach((node, index) => {
+        if (index > 0) flow.append(element("span", "attack-arrow", "→"));
+        const nodeEl = element("div", "attack-node");
+        nodeEl.append(
+          element("small", "", node.kind),
+          element("strong", "", node.label),
+          node.sourceLocation ? element("span", "", node.sourceLocation.file + ":" + node.sourceLocation.line) : element("span", "", "")
+        );
+        flow.append(nodeEl);
+      });
+      card.append(flow);
+
+      const plan = plans.get(path.findingId);
+      if (plan) {
+        const escalation = element("div", "escalation-track");
+        for (const step of plan.steps) {
+          const item = element("span", "escalation-step " + step.status.toLowerCase(), humanize(step.stage));
+          item.title = step.reason;
+          escalation.append(item);
+        }
+        card.append(element("small", "escalation-label", "Automatic evidence escalation"), escalation);
+      }
+      root.append(card);
+    }
+    if (!(intelligence?.attackPaths || []).length) root.append(element("div", "empty-inline", "No source-linked attack path could be constructed from current findings."));
+  }
+
+  function renderSnapshot(candidate) {
+    const snapshot = candidate.ethereum?.pinnedStateSnapshot;
+    const root = $("candidate-snapshot-list");
+    root.replaceChildren();
+    $("candidate-snapshot-block").textContent = snapshot ? "#" + snapshot.blockNumber : "NOT CAPTURED";
+    if (!snapshot) {
+      root.append(element("div", "empty-inline", "Configure a read-only Ethereum RPC to capture canonical state and proxy-control slots."));
+      return;
+    }
+    for (const contract of snapshot.contracts || []) {
+      const card = element("article", "snapshot-card");
+      card.append(
+        element("strong", "", contract.contractRefId),
+        element("code", "", shortDigest(contract.codeHash)),
+        element("small", "", contract.codeBytes + " runtime bytes"),
+        element("span", "", "Implementation: " + (contract.implementationSlot ? "set" : "—")),
+        element("span", "", "Admin: " + (contract.adminSlot ? "set" : "—")),
+        element("span", "", "Beacon: " + (contract.beaconSlot ? "set" : "—"))
+      );
+      root.append(card);
+    }
+  }
+
+  function renderCandidateIntelligence(candidate) {
+    const intelligence = candidate.ethereum?.intelligence;
+    const contentRoot = $("candidate-intelligence-content");
+    $("candidate-intelligence-empty").classList.toggle("hidden", Boolean(intelligence));
+    contentRoot.classList.toggle("hidden", !intelligence);
+    if (!intelligence) return;
+
+    const snapshot = candidate.ethereum?.pinnedStateSnapshot;
+    const attested = (candidate.ethereum?.sourceInspections || []).filter(inspection =>
+      ["SOURCE_RECOMPILED_EXACT", "SOURCE_RECOMPILED_METADATA_EQUIVALENT"].includes(inspection.bytecodeAttestation?.status)
+    ).length;
+    $("candidate-intelligence-metrics").replaceChildren(
+      createCompactStat("◎", "Graph Nodes", intelligence.graph?.nodes?.length || 0),
+      createCompactStat("↔", "Graph Edges", intelligence.graph?.edges?.length || 0),
+      createCompactStat("◇", "Invariants", intelligence.invariants?.length || 0),
+      createCompactStat("⇧", "Escalation Plans", intelligence.escalationPlans?.length || 0),
+      createCompactStat("⌁", "Attack Paths", intelligence.attackPaths?.length || 0),
+      createCompactStat("✓", "Bytecode Attested", attested)
+    );
+    renderKnowledgeGraph(intelligence);
+    renderAttestations(candidate);
+    renderInvariants(intelligence);
+    renderAttackPaths(intelligence);
+    renderSnapshot(candidate);
+    if (snapshot?.partial) showToast("Pinned protocol snapshot is partial; inspect its limitations before relying on absence of state changes.", "error");
+  }
 
     function renderSeverityMetrics(findings) {
   const severity = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
@@ -1073,8 +1252,10 @@
     state.selectedCandidateTab = tab;
     document.querySelectorAll(".candidate-tab").forEach(button => button.classList.toggle("active", button.dataset.candidateTab === tab));
     $("candidate-tab-overview").classList.toggle("hidden", tab !== "overview");
+    $("candidate-tab-intelligence").classList.toggle("hidden", tab !== "intelligence");
     $("candidate-tab-findings").classList.toggle("hidden", tab !== "findings");
     $("candidate-tab-evidence").classList.toggle("hidden", tab !== "evidence");
+    if (tab === "intelligence" && state.selectedCandidate) renderCandidateIntelligence(state.selectedCandidate);
     if (tab === "findings" && state.selectedCandidate) renderCandidateFindings(state.selectedCandidate);
     if (tab === "evidence" && state.selectedCandidate) renderCandidateEvidence(state.selectedCandidate);
   }
@@ -1087,6 +1268,7 @@
     }
     renderCandidateHeader(candidate);
     renderCandidateOverview(candidate);
+    renderCandidateIntelligence(candidate);
     renderCandidateFindings(candidate);
     renderCandidateEvidence(candidate);
     switchCandidateTab(state.selectedCandidateTab);
@@ -1485,6 +1667,7 @@
     $("results-show-summary-csv").addEventListener("click", () => state.reportPaths?.summaryCsvPath && api.showReport(state.reportPaths.summaryCsvPath));
     $("results-show-findings-csv").addEventListener("click", () => state.reportPaths?.findingsCsvPath && api.showReport(state.reportPaths.findingsCsvPath));
     $("results-show-security-html").addEventListener("click", () => state.reportPaths?.securityReviewPath && api.showReport(state.reportPaths.securityReviewPath));
+    $("results-show-sarif").addEventListener("click", () => state.reportPaths?.sarifPath && api.showReport(state.reportPaths.sarifPath));
 
     $("candidate-back").addEventListener("click", () => showScreen("results"));
     $("candidate-host-link").addEventListener("click", () => {
