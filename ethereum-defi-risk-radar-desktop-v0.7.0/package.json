@@ -12,7 +12,7 @@
     "desktop:dev": "npm run build && electron .",
     "dist:win": "npm run build && electron-builder --win nsis --x64",
     "dist:dir": "npm run build && electron-builder --dir",
-    "check": "npm run build && node scripts/smoke-check.mjs && node scripts/protocol-discovery-check.mjs && node scripts/protocol-ui-check.mjs && node scripts/audit-intelligence-check.mjs && node scripts/security-review-check.mjs && node scripts/release-workflow-check.mjs",
+    "check": "npm run build && node scripts/smoke-check.mjs && node scripts/protocol-discovery-check.mjs && node scripts/protocol-ui-check.mjs && node scripts/audit-intelligence-check.mjs && node scripts/security-review-check.mjs && node scripts/protocol-intelligence-check.mjs && node scripts/release-workflow-check.mjs",
     "test:discovery": "npm run build && node scripts/protocol-discovery-check.mjs",
     "test:protocol-ui": "node scripts/protocol-ui-check.mjs",
     "test:analysis": "npm run build && node scripts/analysis-check.mjs",
@@ -27,7 +27,8 @@
     "dist:mac:unsigned": "npm run build && electron-builder --mac dmg zip --universal -c.mac.identity=null -c.mac.hardenedRuntime=false -c.mac.notarize=false",
     "verify:mac": "bash scripts/verify-macos.sh",
     "cli:dev": "npm run build && electron . --cli",
-    "test:security-review": "npm run build && node scripts/security-review-check.mjs"
+    "test:security-review": "npm run build && node scripts/security-review-check.mjs",
+    "test:platform": "npm run build && node scripts/protocol-intelligence-check.mjs"
   },
   "devDependencies": {
     "typescript": "^5.7.2",
