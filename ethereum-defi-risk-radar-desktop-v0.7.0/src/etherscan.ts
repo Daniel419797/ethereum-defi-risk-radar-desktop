@@ -3,7 +3,9 @@ import { fetchJsonBounded } from "./boundedFetch.js";
 import type { BytecodeAttestation } from "./intelligence/model.js";
 import type { ReadOnlyChainReader } from "./intelligence/rpc.js";
 import { attestRuntimeBytecode } from "./intelligence/bytecode.js";
-import { attestVerifiedSourceWithLocalSolc } from "./intelligence/solcAttestation.js";
+import { analyzeRuntimeBytecode, type BytecodeAnalysisReport } from "./analysis/bytecode/analyzer.js";
+import { reproduceVerifiedBuild } from "./intelligence/deterministicBuild.js";
+import { profileVerifiedSourceLanguage, type SourceLanguageProfile } from "./intelligence/sourceLanguage.js";
 
 export type EtherscanSourceMetadata = {
   verified: boolean;
@@ -12,6 +14,8 @@ export type EtherscanSourceMetadata = {
   proxy: boolean;
   implementationAddress?: string;
   sourceInspection?: SourceInspection;
+  sourceLanguageProfile?: SourceLanguageProfile;
+  bytecodeAnalysis?: BytecodeAnalysisReport;
   bytecodeAttestation?: BytecodeAttestation;
 };
 
@@ -26,6 +30,7 @@ type EtherscanResponse = {
         OptimizationUsed?: string;
         Runs?: string;
         EVMVersion?: string;
+        Library?: string;
         Proxy?: string;
         Implementation?: string;
       }>
@@ -33,6 +38,22 @@ type EtherscanResponse = {
 };
 
 const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+
+function parseLibraries(value?: string) {
+  const libraries: Record<string, string> = {};
+  for (const item of (value || "").split(/[;,]/)) {
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+    const separator = trimmed.lastIndexOf(":");
+    if (separator <= 0) continue;
+    const name = trimmed.slice(0, separator).trim();
+    const address = trimmed.slice(separator + 1).trim();
+    if (name && EVM_ADDRESS_RE.test(address)) {
+      libraries[name] = address;
+    }
+  }
+  return Object.keys(libraries).length ? libraries : undefined;
+}
 
 export class EtherscanClient {
   private readonly apiKey: string;
@@ -102,69 +123,86 @@ export class EtherscanClient {
       first.Proxy === "1" ||
       Boolean(implementation);
 
+    const sourceLanguageProfile =
+      verified && source
+        ? profileVerifiedSourceLanguage({
+            source,
+            compilerVersion
+          })
+        : undefined;
+
+    let observedRuntimeBytecode: string | undefined;
+    let bytecodeAnalysis: BytecodeAnalysisReport | undefined;
     let bytecodeAttestation: BytecodeAttestation | undefined;
-    if (opts?.chainReader && opts.attestBytecode) {
+
+    if (opts?.chainReader && opts.pinnedBlockNumber !== undefined) {
       try {
         const chainId = await opts.chainReader.getChainId();
         if (chainId !== 1) {
-          throw new Error(
-            "Bytecode attestation requires Ethereum Mainnet chainId 1."
-          );
+          throw new Error("Bytecode analysis requires Ethereum Mainnet chainId 1.");
+        }
+        observedRuntimeBytecode = await opts.chainReader.getCode(
+          address,
+          opts.pinnedBlockNumber
+        );
+        if (observedRuntimeBytecode !== "0x") {
+          bytecodeAnalysis = analyzeRuntimeBytecode(observedRuntimeBytecode);
         }
 
-        const blockNumber =
-          opts.pinnedBlockNumber ??
-          (await opts.chainReader.getBlock("latest")).number;
-        const observedRuntimeBytecode =
-          await opts.chainReader.getCode(address, blockNumber);
-
-        if (
-          verified &&
-          source &&
-          name &&
-          compilerVersion
-        ) {
-          bytecodeAttestation =
-            await attestVerifiedSourceWithLocalSolc({
+        if (opts.attestBytecode) {
+          if (
+            verified &&
+            source &&
+            name &&
+            compilerVersion &&
+            observedRuntimeBytecode !== "0x"
+          ) {
+            const reproduction = await reproduceVerifiedBuild({
               rawSource: source,
               contractName: name,
               compilerVersion,
               observedRuntimeBytecode,
-              optimizationUsed:
-                first.OptimizationUsed === "1",
-              runs: Number.parseInt(
-                first.Runs || "200",
-                10
-              ),
-              evmVersion:
-                (first.EVMVersion ?? "").trim() ||
-                undefined,
-              executable: opts.solcExecutable
+              optimizationUsed: first.OptimizationUsed === "1",
+              runs: Number.parseInt(first.Runs || "200", 10),
+              evmVersion: (first.EVMVersion ?? "").trim() || undefined,
+              libraries: parseLibraries(first.Library),
+              allowCachedContainer: true
             });
-        } else {
-          bytecodeAttestation =
-            attestRuntimeBytecode({
-              observedRuntimeBytecode,
-              compilerVersion:
-                compilerVersion || undefined,
+            bytecodeAttestation = reproduction.attestation;
+          } else {
+            bytecodeAttestation = attestRuntimeBytecode({
+              observedRuntimeBytecode: observedRuntimeBytecode || null,
+              compilerVersion: compilerVersion || undefined,
               unavailableReason:
-                "Verified source/compiler metadata was incomplete, so only deployed runtime bytecode was observed."
+                verified
+                  ? "Verified source/compiler metadata was incomplete, so source-to-runtime equivalence was not claimed."
+                  : "Source is not verified; deployed runtime bytecode was analyzed directly."
             });
+          }
         }
       } catch (error) {
-        bytecodeAttestation =
-          attestRuntimeBytecode({
-            observedRuntimeBytecode: null,
-            compilerVersion:
-              compilerVersion || undefined,
+        if (opts.attestBytecode) {
+          bytecodeAttestation = attestRuntimeBytecode({
+            observedRuntimeBytecode: observedRuntimeBytecode || null,
+            compilerVersion: compilerVersion || undefined,
             unavailableReason:
-              "Bytecode attestation could not run: " +
-              (error instanceof Error
-                ? error.message
-                : String(error))
+              "Bytecode analysis/attestation could not complete: " +
+              (error instanceof Error ? error.message : String(error))
           });
+        }
       }
     }
+
+    const sourceInspection =
+      verified &&
+      source &&
+      opts?.inspectSource &&
+      sourceLanguageProfile?.language === "SOLIDITY"
+        ? inspectVerifiedSource(source, {
+            maxBytes: opts.maxSourceBytes,
+            maxFindings: opts.maxFindings
+          })
+        : undefined;
 
     return {
       verified,
@@ -176,15 +214,9 @@ export class EtherscanClient {
         EVM_ADDRESS_RE.test(implementation)
           ? implementation
           : undefined,
-      sourceInspection:
-        verified &&
-        source &&
-        opts?.inspectSource
-          ? inspectVerifiedSource(source, {
-              maxBytes: opts.maxSourceBytes,
-              maxFindings: opts.maxFindings
-            })
-          : undefined,
+      sourceInspection,
+      sourceLanguageProfile,
+      bytecodeAnalysis,
       bytecodeAttestation
     };
   }
