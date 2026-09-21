@@ -19,7 +19,11 @@
     "settings"
   ];
   const currentYear = new Date().getUTCFullYear();
-  const severityOrder = { HIGH_REVIEW: 0, MEDIUM: 1, LOW: 2, INFO: 3 };
+  const severityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4 };
+  const evidenceOrder = { REPRODUCED_FORK: 0, REPRODUCED_MODEL: 1, EXECUTED: 2, STRUCTURAL: 3, HEURISTIC: 4 };
+  const legacySeverity = { HIGH_REVIEW: "HIGH", MEDIUM: "MEDIUM", LOW: "LOW", INFO: "INFO" };
+  const sourceReviewOnlyExclusions = new Set(["reentrancy_guard_present"]);
+  const legacyToAdvancedKind = { tx_origin: ["authorization"], delegatecall: ["upgradeability", "cross_contract_calls"], low_level_call: ["cross_contract_calls", "reentrancy"], value_transfer_call: ["cross_contract_calls", "reentrancy"], privileged_access: ["authorization", "governance_risk"], upgradeability_pattern: ["upgradeability"], initializer_pattern: ["upgradeability"], unchecked_block: ["arithmetic_precision"], signature_recovery: ["signature_replay"], oracle_price_surface: ["oracle_risk"], permit_signature_surface: ["signature_replay"], cross_chain_surface: ["bridge_messaging"], liquidation_surface: ["oracle_risk"], mev_slippage_surface: ["mev_ordering"], token_accounting_surface: ["token_integration"] };
 
   const state = {
     settings: null,
@@ -134,42 +138,142 @@
     return "low";
   }
 
-  function aggregateCandidates(candidates = state.candidates) {
-    return {
-      candidates: candidates.length,
-      high: candidates.filter(c => c.classification === "HIGH_RESEARCH_PRIORITY").length,
-      reviewed: candidates.reduce((sum, c) => sum + (c.ethereum?.sourceContractsInspected || 0), 0),
-      flags: candidates.reduce((sum, c) => sum + (c.ethereum?.sourceHighReviewCount || 0), 0)
-    };
+  function findingEvidenceKey(finding) {
+  if (finding.evidenceStrength === "REPRODUCED") {
+    const scope = finding.evidenceScope || finding.counterexample?.scope;
+    return scope === "fork" ? "REPRODUCED_FORK" : "REPRODUCED_MODEL";
   }
+  if (finding.evidenceStrength === "EXECUTED") return "EXECUTED";
+  if (finding.evidenceStrength === "STRUCTURAL") return "STRUCTURAL";
+  return "HEURISTIC";
+}
+
+  function findingEvidenceLabel(finding) {
+  const key = finding.evidenceKey || findingEvidenceKey(finding);
+  if (key === "REPRODUCED_FORK") return "Reproduced · fork";
+  if (key === "REPRODUCED_MODEL") return "Reproduced · model";
+  if (key === "EXECUTED") return "Executed";
+  if (key === "STRUCTURAL") return "Structural";
+  return "Heuristic";
+}
+
+  function sourceFindingShadowedByAdvanced(finding, advanced) {
+  const mappedKinds = legacyToAdvancedKind[finding.kind];
+  if (!mappedKinds?.length) return false;
+  return advanced.some(candidate => {
+    const location = candidate.primaryLocation;
+    return mappedKinds.includes(candidate.kind) &&
+      location?.file === finding.file &&
+      Math.abs(Number(location.line || 0) - Number(finding.line || 0)) <= 2;
+  });
+}
+
+  function analysisCompleteness(candidate) {
+  const notices = [];
+  let dropped = 0;
+  let truncatedSourceCharacters = 0;
+  for (const inspection of candidate?.ethereum?.sourceInspections || []) {
+    const label = inspection.contractName || inspection.contractRefId || "Verified contract";
+    const source = inspection.inspection || {};
+    const advanced = source.advancedAnalysis || {};
+    const advancedDropped = (advanced.truncations || []).reduce((sum, item) => sum + Number(item.dropped || 0), 0);
+    dropped += advancedDropped + Number(source.truncatedFindingCount || 0);
+    truncatedSourceCharacters += Number(source.truncatedSourceCharacters || 0);
+    if (advanced.partial) notices.push(`${label}: advanced analysis reported a partial run.`);
+    if (advancedDropped > 0) notices.push(`${label}: ${advancedDropped} advanced match${advancedDropped === 1 ? "" : "es"} omitted by configured caps.`);
+    if (Number(source.truncatedFindingCount || 0) > 0) notices.push(`${label}: ${source.truncatedFindingCount} source-review signal${source.truncatedFindingCount === 1 ? "" : "s"} omitted by the finding limit.`);
+    if (source.sourceTruncated) notices.push(`${label}: ${source.truncatedSourceCharacters || 0} verified-source characters were outside the analysis byte budget.`);
+  }
+  return {
+    partial: notices.length > 0,
+    dropped,
+    truncatedSourceCharacters,
+    notices: [...new Set(notices)]
+  };
+}
+
+  function aggregateCandidates(candidates = state.candidates) {
+  return {
+    candidates: candidates.length,
+    high: candidates.filter(c => c.classification === "HIGH_RESEARCH_PRIORITY").length,
+    reviewed: candidates.reduce((sum, c) => sum + (c.ethereum?.sourceContractsInspected || 0), 0),
+    flags: candidates.reduce((sum, c) => sum + flattenFindings(c).filter(f => f.severity === "CRITICAL" || f.severity === "HIGH").length, 0)
+  };
+}
 
   function flattenFindings(candidate) {
-    const inspections = candidate?.ethereum?.sourceInspections || [];
-    return inspections.flatMap(inspection => {
-      const advanced = inspection.inspection?.advancedAnalysis || {};
-      const protocol = inspection.inspection?.protocolModel;
-      const evidenceLabel = finding => finding.evidenceStrength === "REPRODUCED"
-        ? `Reproduced (${finding.evidenceScope || finding.counterexample?.scope || "unknown"} scope)`
-        : finding.evidenceStrength === "EXECUTED" ? "Executed (counterexample captured)" : humanize(finding.evidenceStrength || "heuristic");
-      const advancedFindings = (advanced.findings || []).map(finding => ({
+  const findings = [];
+  for (const inspection of candidate?.ethereum?.sourceInspections || []) {
+    const contractName = inspection.contractName || inspection.contractRefId || "Verified contract";
+    const contractRefId = inspection.contractRefId || "unknown";
+    const advanced = inspection.inspection?.advancedAnalysis?.findings || [];
+    const historical = new Map((inspection.inspection?.historicalIntelligence?.findings || []).map(item => [item.findingId, item]));
+
+    for (const finding of advanced) {
+      findings.push({
         ...finding,
-        severity: finding.severity === "CRITICAL" || finding.severity === "HIGH" ? "HIGH_REVIEW" : finding.severity,
+        sourceLayer: "advanced",
+        contractName,
+        contractRefId,
+        sourceRole: inspection.sourceRole || (inspection.proxy ? "PROXY" : "DIRECT"),
+        compilerVersion: inspection.compilerVersion || "",
+        proxy: Boolean(inspection.proxy),
+        severity: severityOrder[finding.severity] === undefined ? "INFO" : finding.severity,
         file: finding.primaryLocation?.file || "Structural analysis",
-        line: finding.primaryLocation?.line || 0,
-        description: `${finding.description} Evidence: ${evidenceLabel(finding)}; exploitability: ${humanize(finding.exploitabilityVerdict || "unknown")}; confidence: ${humanize(finding.confidence || "low")}; external reachability: ${finding.reachableFromExternalEntry === undefined ? "unknown" : finding.reachableFromExternalEntry ? "yes" : "no"}.${finding.mitigations?.length ? ` Mitigations: ${finding.mitigations.map(item => humanize(item.kind)).join(", ")}.` : ""}${finding.counterexample?.seed !== undefined ? ` Seed: ${finding.counterexample.seed}.` : ""}${finding.counterexample?.blockNumber !== undefined ? ` Pinned block: ${finding.counterexample.blockNumber}.` : ""}`
-      }));
-      const truncations = (advanced.truncations || []).map(item => ({ kind: "analysis_truncation", severity: "INFO", title: `Results capped for ${item.ruleId}`, description: `${item.dropped} additional matches were omitted after the explicit limit of ${item.limit}. The analysis is partial.`, file: "Analysis completeness", line: 0 }));
-      if (inspection.inspection?.truncatedFindingCount > 0) truncations.push({ kind: "analysis_truncation", severity: "INFO", title: "Legacy review signals capped", description: `${inspection.inspection.truncatedFindingCount} additional signals were omitted after the explicit limit of ${inspection.inspection.findingLimit}. The analysis is partial.`, file: "Analysis completeness", line: 0 });
-      if (inspection.inspection?.sourceTruncated) truncations.push({ kind: "analysis_truncation", severity: "INFO", title: "Verified source input capped", description: `${inspection.inspection.truncatedSourceCharacters} source characters were not analyzed because the configured input limit was reached.`, file: "Analysis completeness", line: 0 });
-      const protocolSummary = protocol ? [{ kind: "protocol_model", severity: "INFO", title: "Protocol-level model", description: `${protocol.contracts?.length || 0} contracts, ${protocol.calls?.length || 0} call edges, ${protocol.unresolvedCallCount || 0} unresolved calls, categories: ${(protocol.categories || []).join(", ") || "unknown"}.`, file: "Protocol analysis", line: 0 }] : [];
-      return [...(inspection.inspection?.findings || []), ...advancedFindings, ...truncations, ...protocolSummary].map(finding => ({
-        ...finding,
-        contractName: inspection.contractName || inspection.contractRefId || "Verified contract"
-      }));
-    });
+        line: Number(finding.primaryLocation?.line || 0),
+        column: Number(finding.primaryLocation?.column || 0),
+        evidenceKey: findingEvidenceKey(finding),
+        historical: historical.get(`advanced:${finding.id}`) || null
+      });
+    }
+
+    for (const finding of inspection.inspection?.findings || []) {
+      if (sourceReviewOnlyExclusions.has(finding.kind)) continue;
+      if (sourceFindingShadowedByAdvanced(finding, advanced)) continue;
+      findings.push({
+        id: `source:${contractRefId}:${finding.kind}:${finding.file}:${finding.line}`,
+        kind: finding.kind,
+        engine: "native",
+        severity: legacySeverity[finding.severity] || "INFO",
+        confidence: "LOW",
+        evidenceStrength: "HEURISTIC",
+        evidenceKey: "HEURISTIC",
+        exploitabilityVerdict: "UNKNOWN",
+        title: finding.title,
+        description: finding.description,
+        limitations: ["Pattern-level source review signal; presence alone does not establish exploitability."],
+        sourceLayer: "source-review",
+        contractName,
+        contractRefId,
+        sourceRole: inspection.sourceRole || (inspection.proxy ? "PROXY" : "DIRECT"),
+        compilerVersion: inspection.compilerVersion || "",
+        proxy: Boolean(inspection.proxy),
+        file: finding.file || "Verified source",
+        line: Number(finding.line || 0),
+        column: 0,
+        historical: historical.get(`source:${finding.kind}:${finding.file}:${finding.line}`) || null
+      });
+    }
   }
 
-  function candidateEvidenceYears(candidate) {
+  const seen = new Set();
+  return findings.filter(finding => {
+    const key = [
+      finding.contractRefId,
+      finding.kind,
+      finding.file,
+      finding.line,
+      finding.title,
+      finding.evidenceKey,
+      finding.evidenceScope || finding.counterexample?.scope || ""
+    ].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+    function candidateEvidenceYears(candidate) {
     const years = (candidate?.evidence || []).map(e => Number(e.year)).filter(Number.isFinite);
     if (!years.length) return "—";
     const min = Math.min(...years);
@@ -538,7 +642,7 @@
       statusTd.append(badge);
 
       const actionTd = element("td");
-      const button = element("button", "review-button", "Review ›");
+      const button = element("button", "review-button", flattenFindings(candidate).length ? "View Findings ›" : "Review ›");
       button.type = "button";
       button.addEventListener("click", () => openCandidate(candidate));
       actionTd.append(button);
@@ -579,119 +683,224 @@
   }
 
   function renderCandidateOverview(candidate) {
-    const metrics = $("candidate-overview-metrics");
-    metrics.replaceChildren(
-      createCompactStat("⌁", "Signal Categories", candidate.signalCount),
-      createCompactStat("◌", "Source Diversity", candidate.sourceDiversity),
-      createCompactStat("‹›", "Contract References", candidate.ethereum?.contractReferencesObserved || 0),
-      createCompactStat("✓", "Verified Source Contracts", candidate.ethereum?.verifiedSourceContracts || 0),
-      createCompactStat("⌕", "Source Contracts Inspected", candidate.ethereum?.sourceContractsInspected || 0),
-      createCompactStat("⚑", "High-Review Findings", candidate.ethereum?.sourceHighReviewCount || 0),
-      createCompactStat("⇄", "Structural Findings", candidate.ethereum?.advancedFindingCount || 0)
-    );
+  const findings = flattenFindings(candidate);
+  const criticalHigh = findings.filter(finding => finding.severity === "CRITICAL" || finding.severity === "HIGH").length;
+  const reproduced = findings.filter(finding => finding.evidenceKey === "REPRODUCED_FORK" || finding.evidenceKey === "REPRODUCED_MODEL").length;
+  const metrics = $("candidate-overview-metrics");
+  metrics.replaceChildren(
+    createCompactStat("⌁", "Signal Categories", candidate.signalCount),
+    createCompactStat("◌", "Source Diversity", candidate.sourceDiversity),
+    createCompactStat("✓", "Verified Contracts", candidate.ethereum?.verifiedSourceContracts || 0),
+    createCompactStat("⌕", "Contracts Analyzed", candidate.ethereum?.sourceContractsInspected || 0),
+    createCompactStat("!", "Critical + High", criticalHigh),
+    createCompactStat("◎", "Reproduced", reproduced)
+  );
 
-    const chips = $("candidate-signal-chips");
-    chips.replaceChildren();
-    for (const kind of candidate.kinds || []) chips.append(element("span", "signal-chip", humanize(kind)));
+  const chips = $("candidate-signal-chips");
+  chips.replaceChildren();
+  for (const kind of candidate.kinds || []) chips.append(element("span", "signal-chip", humanize(kind)));
 
-    const description = candidate.classification === "HIGH_RESEARCH_PRIORITY"
-      ? "Multiple independent public signals make this candidate a high research priority for deeper manual review."
-      : candidate.classification === "REVIEW"
-        ? "The candidate has enough corroborated public signals to warrant manual review."
-        : "The candidate has public signals, but they currently fall below the higher research-priority thresholds.";
-    $("candidate-interpretation").textContent = description;
+  const description = candidate.classification === "HIGH_RESEARCH_PRIORITY"
+    ? "Multiple independent public signals make this protocol a high research priority for deeper manual review."
+    : candidate.classification === "REVIEW"
+      ? "The protocol has enough corroborated public signals to warrant manual review."
+      : "The protocol has public signals, but they currently fall below the higher research-priority thresholds.";
+  $("candidate-interpretation").textContent = description;
+}
+
+    function renderSeverityMetrics(findings) {
+  const severity = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
+  const evidence = { REPRODUCED_FORK: 0, REPRODUCED_MODEL: 0, EXECUTED: 0, STRUCTURAL: 0, HEURISTIC: 0 };
+  for (const finding of findings) {
+    if (severity[finding.severity] !== undefined) severity[finding.severity] += 1;
+    if (evidence[finding.evidenceKey] !== undefined) evidence[finding.evidenceKey] += 1;
   }
-
-  function renderSeverityMetrics(findings) {
-    const counts = { HIGH_REVIEW: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
-    for (const finding of findings) if (counts[finding.severity] !== undefined) counts[finding.severity] += 1;
-    const root = $("findings-severity-metrics");
-    root.replaceChildren();
-    const configs = [
-      ["red", "!", "High Review", counts.HIGH_REVIEW],
-      ["red", "◇", "Medium", counts.MEDIUM],
-      ["green", "◇", "Low", counts.LOW],
-      ["blue", "i", "Info", counts.INFO]
-    ];
-    for (const [color, icon, label, value] of configs) {
-      const card = element("article", `metric-card ${color}`);
-      card.append(element("div", "metric-icon", icon));
-      const copy = element("div");
-      copy.append(element("small", "", label), element("strong", "", value));
-      card.append(copy);
-      root.append(card);
-    }
+  const root = $("findings-severity-metrics");
+  root.replaceChildren();
+  const configs = [
+    ["red", "!", "Critical", severity.CRITICAL],
+    ["red", "▲", "High", severity.HIGH],
+    ["purple", "◎", "Reproduced", evidence.REPRODUCED_FORK + evidence.REPRODUCED_MODEL],
+    ["blue", "▶", "Executed", evidence.EXECUTED],
+    ["blue", "◇", "Structural", evidence.STRUCTURAL],
+    ["green", "⌕", "Heuristic", evidence.HEURISTIC]
+  ];
+  for (const [color, icon, label, value] of configs) {
+    const card = element("article", `metric-card ${color}`);
+    card.append(element("div", "metric-icon", icon));
+    const copy = element("div");
+    copy.append(element("small", "", label), element("strong", "", value));
+    card.append(copy);
+    root.append(card);
   }
+}
 
   function syncFindingKindOptions(findings) {
-    const select = $("findings-kind-filter");
-    const current = select.value || "ALL";
-    const kinds = [...new Set(findings.map(f => f.kind))].sort();
-    select.replaceChildren();
-    const all = element("option", "", "All");
-    all.value = "ALL";
-    select.append(all);
-    for (const kind of kinds) {
-      const option = element("option", "", humanize(kind));
-      option.value = kind;
-      select.append(option);
-    }
-    select.value = kinds.includes(current) ? current : "ALL";
+  const select = $("findings-kind-filter");
+  const current = select.value || "ALL";
+  const kinds = [...new Set(findings.map(f => f.kind))].sort();
+  select.replaceChildren();
+  const all = element("option", "", "All");
+  all.value = "ALL";
+  select.append(all);
+  for (const kind of kinds) {
+    const option = element("option", "", humanize(kind));
+    option.value = kind;
+    select.append(option);
   }
+  select.value = kinds.includes(current) ? current : "ALL";
+}
 
   function findingIcon(severity) {
-    if (severity === "HIGH_REVIEW") return "!";
-    if (severity === "MEDIUM") return "◇";
-    if (severity === "LOW") return "△";
-    return "i";
-  }
+  if (severity === "CRITICAL") return "!";
+  if (severity === "HIGH") return "▲";
+  if (severity === "MEDIUM") return "◇";
+  if (severity === "LOW") return "△";
+  return "i";
+}
+
+  function appendFindingDetails(copy, title, values) {
+  const items = (values || []).filter(Boolean);
+  if (!items.length) return;
+  const details = element("details", "finding-details");
+  details.append(element("summary", "", title));
+  const list = element("ul", "finding-detail-list");
+  for (const value of items) list.append(element("li", "", value));
+  details.append(list);
+  copy.append(details);
+}
 
   function renderCandidateFindings(candidate) {
-    const allFindings = flattenFindings(candidate);
-    renderSeverityMetrics(allFindings);
-    syncFindingKindOptions(allFindings);
+  const allFindings = flattenFindings(candidate);
+  renderSeverityMetrics(allFindings);
+  syncFindingKindOptions(allFindings);
 
-    const severityFilter = $("findings-severity-filter").value;
-    const kindFilter = $("findings-kind-filter").value;
-    const sort = $("findings-sort").value;
-    let findings = allFindings.filter(f =>
-      (severityFilter === "ALL" || f.severity === severityFilter) &&
-      (kindFilter === "ALL" || f.kind === kindFilter)
+  const completeness = analysisCompleteness(candidate);
+  const warning = $("candidate-analysis-warning");
+  warning.replaceChildren();
+  warning.classList.toggle("hidden", !completeness.partial);
+  if (completeness.partial) {
+    warning.append(element("strong", "", "Partial analysis — absence of a finding is not a clean pass."));
+    const list = element("ul");
+    for (const notice of completeness.notices) list.append(element("li", "", notice));
+    warning.append(list);
+  }
+
+  const severityFilter = $("findings-severity-filter").value;
+  const evidenceFilter = $("findings-evidence-filter").value;
+  const kindFilter = $("findings-kind-filter").value;
+  const sort = $("findings-sort").value;
+  let findings = allFindings.filter(f =>
+    (severityFilter === "ALL" || f.severity === severityFilter) &&
+    (evidenceFilter === "ALL" || f.evidenceKey === evidenceFilter) &&
+    (kindFilter === "ALL" || f.kind === kindFilter)
+  );
+
+  findings = [...findings].sort((a, b) => {
+    if (sort === "file") {
+      const fileCompare = String(a.file).localeCompare(String(b.file));
+      if (fileCompare !== 0) return fileCompare;
+      return Number(a.line || 0) - Number(b.line || 0);
+    }
+    if (sort === "evidence") {
+      return (evidenceOrder[a.evidenceKey] ?? 99) - (evidenceOrder[b.evidenceKey] ?? 99) ||
+        (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99);
+    }
+    return (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99) ||
+      (evidenceOrder[a.evidenceKey] ?? 99) - (evidenceOrder[b.evidenceKey] ?? 99);
+  });
+
+  const root = $("candidate-findings-list");
+  root.replaceChildren();
+  $("candidate-findings-empty").classList.toggle("hidden", findings.length > 0);
+
+  const groups = new Map();
+  for (const finding of findings) {
+    const key = `${finding.contractRefId}|${finding.contractName}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(finding);
+  }
+
+  for (const group of groups.values()) {
+    const first = group[0];
+    const groupRoot = element("section", "finding-contract-group");
+    const header = element("div", "finding-contract-header");
+    const headerCopy = element("div");
+    headerCopy.append(
+      element("h3", "", first.contractName),
+      element("small", "", `${first.sourceRole || "DIRECT"}${first.compilerVersion ? ` · ${first.compilerVersion}` : ""}`)
     );
+    header.append(headerCopy, element("strong", "", `${group.length} finding${group.length === 1 ? "" : "s"}`));
+    groupRoot.append(header);
 
-    findings = [...findings].sort((a, b) => {
-      if (sort === "file") {
-        const fileCompare = String(a.file).localeCompare(String(b.file));
-        if (fileCompare !== 0) return fileCompare;
-        return Number(a.line || 0) - Number(b.line || 0);
-      }
-      return (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99);
-    });
-
-    const root = $("candidate-findings-list");
-    root.replaceChildren();
-    $("candidate-findings-empty").classList.toggle("hidden", findings.length > 0);
-
-    for (const finding of findings) {
-      const card = element("article", "finding-card");
+    for (const finding of group) {
+      const card = element("article", "finding-card finding-card-detailed");
       const severity = element("div", `severity-block ${String(finding.severity).toLowerCase()}`);
-      severity.append(element("strong", "", humanize(finding.severity)), element("span", "", findingIcon(finding.severity)));
+      severity.append(element("strong", "", finding.severity), element("span", "", findingIcon(finding.severity)));
 
       const copy = element("div", "finding-copy");
-      copy.append(element("h3", "", finding.title), element("p", "", finding.description));
+      const heading = element("div", "finding-heading-row");
+      heading.append(element("h3", "", finding.title));
+      const badges = element("div", "finding-badges");
+      badges.append(
+        element("span", `finding-badge evidence ${String(finding.evidenceKey).toLowerCase()}`, findingEvidenceLabel(finding)),
+        element("span", "finding-badge", humanize(finding.kind))
+      );
+      heading.append(badges);
+      copy.append(heading, element("p", "", finding.description));
+
+      const meta = element("div", "finding-meta-grid");
+      const metaValues = [
+        ["Confidence", humanize(finding.confidence || "unknown")],
+        ["Engine", humanize(finding.engine || "native")],
+        ["Exploitability", humanize(finding.exploitabilityVerdict || "unknown")],
+        ["External reachability", finding.reachableFromExternalEntry === undefined ? "Unknown" : finding.reachableFromExternalEntry ? "Yes" : "No"]
+      ];
+      for (const [label, value] of metaValues) {
+        const item = element("div", "finding-meta-item");
+        item.append(element("span", "", label), element("strong", "", value));
+        meta.append(item);
+      }
+      copy.append(meta);
+
+      if (finding.remediation) {
+        const guidance = element("div", "finding-guidance");
+        guidance.append(element("strong", "", "Recommended remediation"), element("p", "", finding.remediation));
+        copy.append(guidance);
+      }
+      if (finding.historical?.analogues?.length) {
+        const history = element("div", "finding-history");
+        history.append(
+          element("strong", "", "Historical Audit Intelligence"),
+          element("p", "", `${humanize(finding.historical.predictedCategory)} · ${Math.round(Number(finding.historical.categoryConfidence || 0) * 100)}% category confidence · review-priority context ${finding.historical.historicalRiskScore}/100 · ${finding.historical.analogues.length} analogue${finding.historical.analogues.length === 1 ? "" : "s"}. Supporting context only.`)
+        );
+        copy.append(history);
+      }
+
+      appendFindingDetails(copy, "Detected mitigations", (finding.mitigations || []).map(item => `${humanize(item.kind)}${item.evidence ? ` — ${item.evidence}` : ""}`));
+      appendFindingDetails(copy, "Witness path", (finding.witnessPath || []).map(step => `${humanize(step.role)} · ${step.symbol} · ${step.location?.file || "unknown"}:${step.location?.line || 0}`));
+      appendFindingDetails(copy, "Counterexample", finding.counterexample ? [
+        finding.counterexample.observedViolation,
+        ...(finding.counterexample.sequence || []).map((step, index) => `${index + 1}. ${step}`),
+        finding.counterexample.seed !== undefined ? `Seed: ${finding.counterexample.seed}` : "",
+        finding.counterexample.blockNumber !== undefined ? `Pinned block: ${finding.counterexample.blockNumber}` : ""
+      ] : []);
+      appendFindingDetails(copy, "Limitations", finding.limitations || []);
 
       const side = element("div", "finding-side");
       side.append(
-        element("div", "", `${finding.file} · line ${finding.line}`),
-        element("div", "", finding.contractName),
-        element("span", "kind-chip", humanize(finding.kind))
+        element("div", "finding-location", finding.line > 0 ? `${finding.file} · line ${finding.line}${finding.column ? `:${finding.column}` : ""}` : finding.file),
+        element("div", "", first.contractName),
+        element("span", "kind-chip", finding.sourceLayer === "advanced" ? "Advanced analysis" : "Source review")
       );
       card.append(severity, copy, side);
-      root.append(card);
+      groupRoot.append(card);
     }
+    root.append(groupRoot);
   }
+}
 
-  function evidenceIcon(kind) {
+    function evidenceIcon(kind) {
     if (kind === "historical_incident") return "!";
     if (kind === "archived_code") return "▤";
     if (kind === "public_audit_finding") return "◇";
@@ -1145,7 +1354,9 @@
     $("results-sort").addEventListener("change", renderResults);
     $("results-open-folder").addEventListener("click", () => api.openOutputFolder());
     $("results-show-json").addEventListener("click", () => state.reportPaths?.jsonPath && api.showReport(state.reportPaths.jsonPath));
-    $("results-show-csv").addEventListener("click", () => state.reportPaths?.csvPath && api.showReport(state.reportPaths.csvPath));
+    $("results-show-summary-csv").addEventListener("click", () => state.reportPaths?.summaryCsvPath && api.showReport(state.reportPaths.summaryCsvPath));
+    $("results-show-findings-csv").addEventListener("click", () => state.reportPaths?.findingsCsvPath && api.showReport(state.reportPaths.findingsCsvPath));
+    $("results-show-security-html").addEventListener("click", () => state.reportPaths?.securityReviewPath && api.showReport(state.reportPaths.securityReviewPath));
 
     $("candidate-back").addEventListener("click", () => showScreen("results"));
     $("candidate-host-link").addEventListener("click", () => {
@@ -1156,6 +1367,7 @@
       button.addEventListener("click", () => switchCandidateTab(button.dataset.candidateTab));
     });
     $("findings-severity-filter").addEventListener("change", () => state.selectedCandidate && renderCandidateFindings(state.selectedCandidate));
+    $("findings-evidence-filter").addEventListener("change", () => state.selectedCandidate && renderCandidateFindings(state.selectedCandidate));
     $("findings-kind-filter").addEventListener("change", () => state.selectedCandidate && renderCandidateFindings(state.selectedCandidate));
     $("findings-sort").addEventListener("change", () => state.selectedCandidate && renderCandidateFindings(state.selectedCandidate));
 
