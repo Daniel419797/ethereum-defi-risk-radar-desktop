@@ -1715,6 +1715,7 @@ async function watchCandidate(candidateId: string, intervalMinutes = 15) {
   }
   return upsertProtocolWatch(monitorRegistryPath(), {
     name: candidate.label,
+    protocolId: candidate.id,
     intervalMinutes,
     targets
   });
