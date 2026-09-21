@@ -12,7 +12,7 @@ import {
   encodeCall
 } from "./abi.js";
 import type {
-  ReadOnlyEthereumRpcClient
+  ReadOnlyChainReader
 } from "./rpc.js";
 import {
   EIP1967_ADMIN_SLOT,
@@ -78,7 +78,7 @@ function minimalProxyTarget(
 }
 
 async function safeStorage(
-  reader: ReadOnlyEthereumRpcClient,
+  reader: ReadOnlyChainReader,
   address: string,
   slot: string,
   blockNumber: number
@@ -97,7 +97,7 @@ async function safeStorage(
 }
 
 async function safeCall(
-  reader: ReadOnlyEthereumRpcClient,
+  reader: ReadOnlyChainReader,
   address: string,
   data: string,
   blockNumber: number
@@ -114,7 +114,7 @@ async function safeCall(
 }
 
 async function resolveDiamondFacets(
-  reader: ReadOnlyEthereumRpcClient,
+  reader: ReadOnlyChainReader,
   address: string,
   blockNumber: number
 ) {
@@ -165,7 +165,7 @@ async function resolveDiamondFacets(
 }
 
 export async function resolveComplexProxy(opts: {
-  reader: ReadOnlyEthereumRpcClient;
+  reader: ReadOnlyChainReader;
   address: string;
   blockNumber: number;
 }): Promise<ProxyResolution> {
