@@ -8,6 +8,7 @@ import { TinyFishSearchClient } from "./tinyfish.js";
 import { EtherscanClient } from "./etherscan.js";
 import { scanLegacyEthereumDefi } from "./scanner.js";
 import { writeReports } from "./report.js";
+import { ReadOnlyEthereumRpcClient } from "./intelligence/rpc.js";
 
 function getArg(name: string) {
   const prefix = `--${name}=`;
@@ -74,6 +75,9 @@ async function main() {
   const etherscan = process.env.ETHERSCAN_API_KEY
     ? new EtherscanClient(process.env.ETHERSCAN_API_KEY)
     : undefined;
+  const chainReader = process.env.ETHEREUM_RPC_URL
+    ? new ReadOnlyEthereumRpcClient(process.env.ETHEREUM_RPC_URL)
+    : undefined;
 
   console.log(
     `Ethereum DeFi Risk Radar: Ethereum Mainnet (chain 1), ${startYear}-${endYear}`
@@ -96,6 +100,8 @@ async function main() {
     inspectVerifiedSource,
     maxSourceBytes,
     maxSourceFindings,
+    chainReader,
+    attestBytecode: Boolean(chainReader),
     onProgress: msg => console.log(msg)
   });
 
@@ -125,6 +131,7 @@ async function main() {
 
   console.log(`JSON: ${paths.jsonPath}`);
   console.log(`CSV:  ${paths.csvPath}`);
+  console.log(`SARIF: ${paths.sarifPath}`);
 }
 
 main().catch(error => {

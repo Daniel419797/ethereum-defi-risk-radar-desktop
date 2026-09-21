@@ -31,7 +31,7 @@
     currentScreen: "dashboard",
     onboarding: false,
     onboardingStep: 1,
-    draftKeys: { tinyfishApiKey: "", etherscanApiKey: "" },
+    draftKeys: { tinyfishApiKey: "", etherscanApiKey: "", ethereumRpcUrl: "" },
     candidates: [],
     reportPaths: null,
     lastScan: null,
@@ -42,7 +42,8 @@
     selectedCandidate: null,
     selectedCandidateTab: "overview",
     keyModalProvider: null,
-    connection: { tinyfish: "unknown", etherscan: "unknown" },
+    connection: { tinyfish: "unknown", etherscan: "unknown", rpc: "unknown" },
+    monitors: [],
     analysisCapabilities: [],
     analysisRunning: false,
     analysisResult: null,
@@ -368,6 +369,7 @@
     return {
       tinyfishApiKey: state.draftKeys.tinyfishApiKey,
       etherscanApiKey: state.draftKeys.etherscanApiKey || undefined,
+      ethereumRpcUrl: state.draftKeys.ethereumRpcUrl || undefined,
       tinyfishEndpoint: $("setup-endpoint").value.trim(),
       maxPagesPerQuery: clamp($("setup-pages").value, 1, 10, 1),
       minPublicSignals: clamp($("setup-min-signals").value, 2, 8, 2),
@@ -389,6 +391,12 @@
     }
     if (!state.settings.hasEtherscanApiKey && state.connection.etherscan !== "testing") {
       state.connection.etherscan = "optional";
+    }
+    if (state.connection.rpc === "unknown") {
+      state.connection.rpc = state.settings.hasEthereumRpcUrl ? "configured" : "optional";
+    }
+    if (!state.settings.hasEthereumRpcUrl && state.connection.rpc !== "testing") {
+      state.connection.rpc = "optional";
     }
     updateConnectionUI();
   }
@@ -418,21 +426,28 @@
   function updateConnectionUI() {
     const tf = state.connection.tinyfish;
     const es = state.connection.etherscan;
+    const rpc = state.connection.rpc;
 
     $("dashboard-tinyfish-status").textContent = providerStatusText(tf);
     $("dashboard-etherscan-status").textContent = providerStatusText(es);
+    $("dashboard-rpc-status").textContent = providerStatusText(rpc);
     $("dashboard-tinyfish-status").className = providerStatusClass(tf);
     $("dashboard-etherscan-status").className = providerStatusClass(es);
-    $("dashboard-tinyfish-check").className = `status-check ${providerStatusClass(tf)}`;
-    $("dashboard-etherscan-check").className = `status-check ${providerStatusClass(es)}`;
+    $("dashboard-rpc-status").className = providerStatusClass(rpc);
+    $("dashboard-tinyfish-check").className = "status-check " + providerStatusClass(tf);
+    $("dashboard-etherscan-check").className = "status-check " + providerStatusClass(es);
+    $("dashboard-rpc-check").className = "status-check " + providerStatusClass(rpc);
     $("dashboard-tinyfish-check").textContent = tf === "connected" ? "✓" : tf === "failed" ? "×" : "•";
     $("dashboard-etherscan-check").textContent = es === "connected" ? "✓" : es === "failed" ? "×" : "•";
+    $("dashboard-rpc-check").textContent = rpc === "connected" ? "✓" : rpc === "failed" ? "×" : "•";
 
     if (state.settings) {
       $("settings-tinyfish-badge").textContent = providerStatusText(tf);
-      $("settings-tinyfish-badge").className = `connected-badge ${tf === "failed" ? "bad" : tf === "connected" ? "" : "neutral"}`.trim();
+      $("settings-tinyfish-badge").className = "connected-badge " + (tf === "failed" ? "bad" : tf === "connected" ? "" : "neutral");
       $("settings-etherscan-badge").textContent = providerStatusText(es);
-      $("settings-etherscan-badge").className = `connected-badge ${es === "failed" ? "bad" : es === "connected" ? "" : "neutral"}`.trim();
+      $("settings-etherscan-badge").className = "connected-badge " + (es === "failed" ? "bad" : es === "connected" ? "" : "neutral");
+      $("settings-rpc-badge").textContent = providerStatusText(rpc);
+      $("settings-rpc-badge").className = "connected-badge " + (rpc === "failed" ? "bad" : rpc === "connected" ? "" : "neutral");
     }
   }
 
@@ -452,22 +467,30 @@
 
     setProviderStatus("tinyfish", "testing");
     setProviderStatus("etherscan", state.settings.hasEtherscanApiKey ? "testing" : "optional");
+    setProviderStatus("rpc", state.settings.hasEthereumRpcUrl ? "testing" : "optional");
 
     $("connection-modal-subtitle").textContent = "Testing all configured connections...";
     $("connection-tinyfish-result").className = "test-result pending";
     $("connection-tinyfish-result").textContent = "Testing…";
     $("connection-tinyfish-message").textContent = "Waiting for response";
     $("connection-tinyfish-endpoint").textContent = state.settings.tinyfishEndpoint;
+
     $("connection-etherscan-result").className = state.settings.hasEtherscanApiKey ? "test-result pending" : "test-result neutral";
     $("connection-etherscan-result").textContent = state.settings.hasEtherscanApiKey ? "Testing…" : "Not configured";
     $("connection-etherscan-message").textContent = state.settings.hasEtherscanApiKey ? "Waiting for response" : "Optional enrichment disabled";
+
+    $("connection-rpc-result").className = state.settings.hasEthereumRpcUrl ? "test-result pending" : "test-result neutral";
+    $("connection-rpc-result").textContent = state.settings.hasEthereumRpcUrl ? "Testing…" : "Not configured";
+    $("connection-rpc-message").textContent = state.settings.hasEthereumRpcUrl ? "Waiting for response" : "Pinned state and monitoring disabled";
+
     if (open) openModal("connection-modal");
 
     try {
       const result = await api.testConnections();
+
       const tfStatus = result.tinyfish.ok ? "connected" : "failed";
       setProviderStatus("tinyfish", tfStatus);
-      $("connection-tinyfish-result").className = `test-result ${result.tinyfish.ok ? "good" : "bad"}`;
+      $("connection-tinyfish-result").className = "test-result " + (result.tinyfish.ok ? "good" : "bad");
       $("connection-tinyfish-result").textContent = result.tinyfish.ok ? "Connected" : "Failed";
       $("connection-tinyfish-message").textContent = result.tinyfish.message;
 
@@ -475,14 +498,23 @@
         setProviderStatus("etherscan", "optional");
         $("connection-etherscan-result").className = "test-result neutral";
         $("connection-etherscan-result").textContent = "Not configured";
-        $("connection-etherscan-message").textContent = result.etherscan.message;
       } else {
-        const esStatus = result.etherscan.ok ? "connected" : "failed";
-        setProviderStatus("etherscan", esStatus);
-        $("connection-etherscan-result").className = `test-result ${result.etherscan.ok ? "good" : "bad"}`;
+        setProviderStatus("etherscan", result.etherscan.ok ? "connected" : "failed");
+        $("connection-etherscan-result").className = "test-result " + (result.etherscan.ok ? "good" : "bad");
         $("connection-etherscan-result").textContent = result.etherscan.ok ? "Connected" : "Failed";
-        $("connection-etherscan-message").textContent = result.etherscan.message;
       }
+      $("connection-etherscan-message").textContent = result.etherscan.message;
+
+      if (result.ethereumRpc.ok === null) {
+        setProviderStatus("rpc", "optional");
+        $("connection-rpc-result").className = "test-result neutral";
+        $("connection-rpc-result").textContent = "Not configured";
+      } else {
+        setProviderStatus("rpc", result.ethereumRpc.ok ? "connected" : "failed");
+        $("connection-rpc-result").className = "test-result " + (result.ethereumRpc.ok ? "good" : "bad");
+        $("connection-rpc-result").textContent = result.ethereumRpc.ok ? "Connected" : "Failed";
+      }
+      $("connection-rpc-message").textContent = result.ethereumRpc.message;
       $("connection-modal-subtitle").textContent = "Connection test complete.";
     } catch (error) {
       setProviderStatus("tinyfish", "failed");
@@ -699,6 +731,7 @@
     $("candidate-host-link").disabled = !(candidate.evidence || []).some(e => e.sourceUrl);
     const findings = flattenFindings(candidate);
     $("candidate-findings-count").textContent = String(findings.length);
+    $("candidate-intelligence-count").textContent = String(candidate.ethereum?.intelligence?.invariants?.length || 0);
     $("candidate-evidence-count").textContent = String((candidate.evidence || []).length);
   }
 
@@ -733,6 +766,184 @@
       : "The protocol has public signals, but they currently fall below the higher research-priority thresholds.";
   $("candidate-interpretation").textContent = description;
 }
+
+  function shortDigest(value) {
+    if (!value) return "—";
+    return value.length > 24 ? value.slice(0, 12) + "…" + value.slice(-8) : value;
+  }
+
+  function intelligenceStatusClass(status) {
+    if (status === "SOURCE_RECOMPILED_EXACT" || status === "SOURCE_RECOMPILED_METADATA_EQUIVALENT") return "good";
+    if (status === "RECOMPILE_MISMATCH") return "bad";
+    return "neutral";
+  }
+
+  function renderKnowledgeGraph(intelligence) {
+    const root = $("candidate-graph-list");
+    root.replaceChildren();
+    const nodes = new Map((intelligence?.graph?.nodes || []).map(node => [node.id, node]));
+    const edges = intelligence?.graph?.edges || [];
+    $("candidate-graph-digest").textContent = shortDigest(intelligence?.graph?.digest || "");
+
+    for (const edge of edges.slice(0, 28)) {
+      const from = nodes.get(edge.from);
+      const to = nodes.get(edge.to);
+      const row = element("div", "graph-edge-row");
+      row.append(
+        element("span", "graph-node-pill", from?.label || edge.from),
+        element("span", "graph-edge-kind", humanize(edge.kind)),
+        element("span", "graph-node-pill", to?.label || edge.to)
+      );
+      root.append(row);
+    }
+    if (!edges.length) root.append(element("div", "empty-inline", "No resolved graph edges."));
+    if (edges.length > 28) root.append(element("small", "intelligence-more", "+" + (edges.length - 28) + " additional graph edges"));
+  }
+
+  function renderAttestations(candidate) {
+    const root = $("candidate-attestation-list");
+    root.replaceChildren();
+    const inspections = candidate.ethereum?.sourceInspections || [];
+    for (const inspection of inspections) {
+      const attestation = inspection.bytecodeAttestation;
+      const card = element("article", "attestation-card");
+      const head = element("div", "attestation-head");
+      head.append(
+        element("strong", "", inspection.contractName || inspection.contractRefId),
+        element("span", "test-result " + intelligenceStatusClass(attestation?.status), humanize(attestation?.status || "not captured"))
+      );
+      card.append(
+        head,
+        element("small", "", (inspection.sourceRole || "DIRECT") + " · " + (inspection.compilerVersion || "compiler unknown"))
+      );
+      if (attestation) {
+        card.append(
+          element("code", "attestation-hash", shortDigest(attestation.observedRuntimeHash || "")),
+          element("p", "", attestation.observedRuntimeBytes + " runtime bytes · " + (attestation.metadataStripped ? "metadata-normalized comparison" : "raw runtime comparison"))
+        );
+        for (const note of attestation.limitations || []) card.append(element("small", "attestation-note", note));
+      } else {
+        card.append(element("p", "", "No RPC-backed bytecode observation was captured for this scan."));
+      }
+      root.append(card);
+    }
+    if (!inspections.length) root.append(element("div", "empty-inline", "No inspected contracts."));
+  }
+
+  function renderInvariants(intelligence) {
+    const root = $("candidate-invariant-list");
+    root.replaceChildren();
+    for (const selected of intelligence?.invariants || []) {
+      const invariant = selected.invariant;
+      const card = element("article", "invariant-card");
+      const head = element("div", "invariant-head");
+      head.append(
+        element("span", "finding-badge", invariant.category),
+        element("span", "finding-badge evidence structural", selected.confidence + " CONFIDENCE")
+      );
+      card.append(
+        head,
+        element("h3", "", invariant.title),
+        element("p", "", invariant.statement),
+        element("small", "", "If violated: " + invariant.severityIfViolated + " · " + invariant.executionKinds.map(humanize).join(" → ")),
+        element("small", "invariant-rationale", selected.rationale.join(" · "))
+      );
+      root.append(card);
+    }
+    if (!(intelligence?.invariants || []).length) root.append(element("div", "empty-inline", "No protocol-specific invariants selected."));
+  }
+
+  function renderAttackPaths(intelligence) {
+    const root = $("candidate-attack-paths");
+    root.replaceChildren();
+    const plans = new Map((intelligence?.escalationPlans || []).map(plan => [plan.findingId, plan]));
+    for (const path of intelligence?.attackPaths || []) {
+      const card = element("article", "attack-path-card");
+      const head = element("div", "attack-path-head");
+      head.append(
+        element("h3", "", path.title),
+        element("span", "finding-badge", path.severity),
+        element("span", "finding-badge evidence " + String(path.evidenceStrength).toLowerCase(), humanize(path.evidenceStrength))
+      );
+      card.append(head);
+
+      const flow = element("div", "attack-path-flow");
+      path.nodes.forEach((node, index) => {
+        if (index > 0) flow.append(element("span", "attack-arrow", "→"));
+        const nodeEl = element("div", "attack-node");
+        nodeEl.append(
+          element("small", "", node.kind),
+          element("strong", "", node.label),
+          node.sourceLocation ? element("span", "", node.sourceLocation.file + ":" + node.sourceLocation.line) : element("span", "", "")
+        );
+        flow.append(nodeEl);
+      });
+      card.append(flow);
+
+      const plan = plans.get(path.findingId);
+      if (plan) {
+        const escalation = element("div", "escalation-track");
+        for (const step of plan.steps) {
+          const item = element("span", "escalation-step " + step.status.toLowerCase(), humanize(step.stage));
+          item.title = step.reason;
+          escalation.append(item);
+        }
+        card.append(element("small", "escalation-label", "Automatic evidence escalation"), escalation);
+      }
+      root.append(card);
+    }
+    if (!(intelligence?.attackPaths || []).length) root.append(element("div", "empty-inline", "No source-linked attack path could be constructed from current findings."));
+  }
+
+  function renderSnapshot(candidate) {
+    const snapshot = candidate.ethereum?.pinnedStateSnapshot;
+    const root = $("candidate-snapshot-list");
+    root.replaceChildren();
+    $("candidate-snapshot-block").textContent = snapshot ? "#" + snapshot.blockNumber : "NOT CAPTURED";
+    if (!snapshot) {
+      root.append(element("div", "empty-inline", "Configure a read-only Ethereum RPC to capture canonical state and proxy-control slots."));
+      return;
+    }
+    for (const contract of snapshot.contracts || []) {
+      const card = element("article", "snapshot-card");
+      card.append(
+        element("strong", "", contract.contractRefId),
+        element("code", "", shortDigest(contract.codeHash)),
+        element("small", "", contract.codeBytes + " runtime bytes"),
+        element("span", "", "Implementation: " + (contract.implementationSlot ? "set" : "—")),
+        element("span", "", "Admin: " + (contract.adminSlot ? "set" : "—")),
+        element("span", "", "Beacon: " + (contract.beaconSlot ? "set" : "—"))
+      );
+      root.append(card);
+    }
+  }
+
+  function renderCandidateIntelligence(candidate) {
+    const intelligence = candidate.ethereum?.intelligence;
+    const contentRoot = $("candidate-intelligence-content");
+    $("candidate-intelligence-empty").classList.toggle("hidden", Boolean(intelligence));
+    contentRoot.classList.toggle("hidden", !intelligence);
+    if (!intelligence) return;
+
+    const snapshot = candidate.ethereum?.pinnedStateSnapshot;
+    const attested = (candidate.ethereum?.sourceInspections || []).filter(inspection =>
+      ["SOURCE_RECOMPILED_EXACT", "SOURCE_RECOMPILED_METADATA_EQUIVALENT"].includes(inspection.bytecodeAttestation?.status)
+    ).length;
+    $("candidate-intelligence-metrics").replaceChildren(
+      createCompactStat("◎", "Graph Nodes", intelligence.graph?.nodes?.length || 0),
+      createCompactStat("↔", "Graph Edges", intelligence.graph?.edges?.length || 0),
+      createCompactStat("◇", "Invariants", intelligence.invariants?.length || 0),
+      createCompactStat("⇧", "Escalation Plans", intelligence.escalationPlans?.length || 0),
+      createCompactStat("⌁", "Attack Paths", intelligence.attackPaths?.length || 0),
+      createCompactStat("✓", "Bytecode Attested", attested)
+    );
+    renderKnowledgeGraph(intelligence);
+    renderAttestations(candidate);
+    renderInvariants(intelligence);
+    renderAttackPaths(intelligence);
+    renderSnapshot(candidate);
+    if (snapshot?.partial) showToast("Pinned protocol snapshot is partial; inspect its limitations before relying on absence of state changes.", "error");
+  }
 
     function renderSeverityMetrics(findings) {
   const severity = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
@@ -1073,8 +1284,10 @@
     state.selectedCandidateTab = tab;
     document.querySelectorAll(".candidate-tab").forEach(button => button.classList.toggle("active", button.dataset.candidateTab === tab));
     $("candidate-tab-overview").classList.toggle("hidden", tab !== "overview");
+    $("candidate-tab-intelligence").classList.toggle("hidden", tab !== "intelligence");
     $("candidate-tab-findings").classList.toggle("hidden", tab !== "findings");
     $("candidate-tab-evidence").classList.toggle("hidden", tab !== "evidence");
+    if (tab === "intelligence" && state.selectedCandidate) renderCandidateIntelligence(state.selectedCandidate);
     if (tab === "findings" && state.selectedCandidate) renderCandidateFindings(state.selectedCandidate);
     if (tab === "evidence" && state.selectedCandidate) renderCandidateEvidence(state.selectedCandidate);
   }
@@ -1086,7 +1299,9 @@
       return;
     }
     renderCandidateHeader(candidate);
+    renderCandidateWatch(candidate);
     renderCandidateOverview(candidate);
+    renderCandidateIntelligence(candidate);
     renderCandidateFindings(candidate);
     renderCandidateEvidence(candidate);
     switchCandidateTab(state.selectedCandidateTab);
@@ -1230,6 +1445,7 @@
     $("settings-max-findings").value = String(s.maxSourceFindingsPerContract);
     $("settings-output-dir").value = s.outputDir;
     $("settings-remove-etherscan").classList.toggle("hidden", !s.hasEtherscanApiKey);
+    $("settings-remove-rpc").classList.toggle("hidden", !s.hasEthereumRpcUrl);
     updateConnectionUI();
     renderCliStatus();
     renderAnalysisCapabilities();
@@ -1270,12 +1486,14 @@
 
   function openKeyModal(provider) {
     state.keyModalProvider = provider;
-    const name = provider === "tinyfish" ? "TinyFish" : "Etherscan";
-    $("key-modal-title").textContent = `Replace ${name} API Key`;
+    const name = provider === "tinyfish" ? "TinyFish" : provider === "etherscan" ? "Etherscan" : "Ethereum Mainnet RPC";
+    $("key-modal-title").textContent = provider === "rpc" ? "Configure Ethereum Mainnet RPC" : "Replace " + name + " API Key";
     $("key-modal-description").textContent = provider === "tinyfish"
       ? "Enter a new TinyFish key. The existing encrypted key will be replaced after you save."
-      : "Enter a new Etherscan key. The existing encrypted key will be replaced after you save.";
-    $("key-modal-label").textContent = `${name} API Key`;
+      : provider === "etherscan"
+        ? "Enter a new Etherscan key. The existing encrypted key will be replaced after you save."
+        : "Enter an HTTPS Ethereum Mainnet RPC URL. It is encrypted with OS-backed storage and used only through the read-only RPC allowlist.";
+    $("key-modal-label").textContent = provider === "rpc" ? "Ethereum Mainnet RPC URL" : name + " API Key";
     $("key-modal-input").value = "";
     $("key-modal-error").classList.add("hidden");
     openModal("key-modal");
@@ -1289,13 +1507,23 @@
     $("key-modal-save").disabled = true;
     $("key-modal-error").classList.add("hidden");
     try {
-      const payload = state.keyModalProvider === "tinyfish" ? { tinyfishApiKey: key } : { etherscanApiKey: key };
+      const payload =
+        state.keyModalProvider === "tinyfish"
+          ? { tinyfishApiKey: key }
+          : state.keyModalProvider === "etherscan"
+            ? { etherscanApiKey: key }
+            : { ethereumRpcUrl: key };
       state.settings = await api.saveSettings(payload);
       state.connection[state.keyModalProvider] = "configured";
       renderSettings();
       updateConnectionUI();
       closeModal("key-modal");
-      showToast(`${state.keyModalProvider === "tinyfish" ? "TinyFish" : "Etherscan"} API key replaced securely.`, "success");
+      showToast(
+        state.keyModalProvider === "rpc"
+          ? "Ethereum Mainnet RPC saved securely."
+          : (state.keyModalProvider === "tinyfish" ? "TinyFish" : "Etherscan") + " API key replaced securely.",
+        "success"
+      );
     } catch (error) {
       $("key-modal-error").textContent = error?.message || String(error);
       $("key-modal-error").classList.remove("hidden");
@@ -1317,6 +1545,89 @@
       showToast(error?.message || String(error), "error");
     } finally {
       $("confirm-remove-etherscan").disabled = false;
+    }
+  }
+
+  async function removeRpcUrl() {
+    $("confirm-remove-rpc").disabled = true;
+    try {
+      state.settings = await api.saveSettings({ clearEthereumRpcUrl: true });
+      state.connection.rpc = "optional";
+      renderSettings();
+      updateConnectionUI();
+      closeModal("confirm-rpc-modal");
+      showToast("Ethereum RPC removed. Pinned state and monitoring are disabled.", "success");
+    } catch (error) {
+      showToast(error?.message || String(error), "error");
+    } finally {
+      $("confirm-remove-rpc").disabled = false;
+    }
+  }
+
+  function candidateWatch(candidate) {
+    return state.monitors.find(watch => watch.protocolId === candidate?.id);
+  }
+
+  function renderCandidateWatch(candidate) {
+    const watch = candidateWatch(candidate);
+    const configured = Boolean(state.settings?.hasEthereumRpcUrl);
+    $("candidate-watch-status").textContent = watch
+      ? "Watching every " + watch.intervalMinutes + "m"
+      : configured ? "Not watched" : "RPC required";
+    $("candidate-watch-status").className = "connected-badge " + (watch ? "" : "neutral");
+    $("candidate-watch").textContent = watch ? "↻ Run Watch Now" : "◎ Watch Protocol";
+    $("candidate-watch").disabled = !configured;
+    $("candidate-unwatch").classList.toggle("hidden", !watch);
+  }
+
+  async function refreshMonitors() {
+    try {
+      const registry = await api.listMonitors();
+      state.monitors = registry?.watches || [];
+    } catch {
+      state.monitors = [];
+    }
+    if (state.selectedCandidate) renderCandidateWatch(state.selectedCandidate);
+  }
+
+  async function toggleCandidateWatchRun() {
+    const candidate = state.selectedCandidate;
+    if (!candidate) return;
+    if (!state.settings?.hasEthereumRpcUrl) {
+      showToast("Configure a read-only Ethereum Mainnet RPC in Settings first.", "error");
+      showScreen("settings");
+      return;
+    }
+    const watch = candidateWatch(candidate);
+    try {
+      if (watch) {
+        const result = await api.runMonitorNow(watch.id);
+        const changed = Boolean(result?.diff?.changed);
+        showToast(
+          changed
+            ? "Protocol watch found " + result.diff.changes.length + " state change(s)."
+            : "Protocol watch completed with no monitored changes.",
+          changed ? "error" : "success"
+        );
+      } else {
+        await api.watchCandidate({ candidateId: candidate.id, intervalMinutes: 15 });
+        showToast("Protocol watch enabled at a 15-minute interval.", "success");
+      }
+      await refreshMonitors();
+    } catch (error) {
+      showToast(error?.message || String(error), "error");
+    }
+  }
+
+  async function stopCandidateWatch() {
+    const watch = candidateWatch(state.selectedCandidate);
+    if (!watch) return;
+    try {
+      await api.removeMonitor(watch.id);
+      await refreshMonitors();
+      showToast("Protocol watch removed.", "success");
+    } catch (error) {
+      showToast(error?.message || String(error), "error");
     }
   }
 
@@ -1425,6 +1736,7 @@
       }
       state.draftKeys.tinyfishApiKey = tinyfish;
       state.draftKeys.etherscanApiKey = $("setup-etherscan-key").value.trim();
+      state.draftKeys.ethereumRpcUrl = $("setup-rpc-url").value.trim();
       showOnboardingStep(2);
     });
 
@@ -1447,6 +1759,7 @@
         }
         state.connection.tinyfish = "configured";
         state.connection.etherscan = state.settings.hasEtherscanApiKey ? "configured" : "optional";
+        state.connection.rpc = state.settings.hasEthereumRpcUrl ? "configured" : "optional";
         setOnboarding(false);
         $("dashboard-start-year").value = "2016";
         $("dashboard-end-year").value = String(currentYear);
@@ -1485,12 +1798,15 @@
     $("results-show-summary-csv").addEventListener("click", () => state.reportPaths?.summaryCsvPath && api.showReport(state.reportPaths.summaryCsvPath));
     $("results-show-findings-csv").addEventListener("click", () => state.reportPaths?.findingsCsvPath && api.showReport(state.reportPaths.findingsCsvPath));
     $("results-show-security-html").addEventListener("click", () => state.reportPaths?.securityReviewPath && api.showReport(state.reportPaths.securityReviewPath));
+    $("results-show-sarif").addEventListener("click", () => state.reportPaths?.sarifPath && api.showReport(state.reportPaths.sarifPath));
 
     $("candidate-back").addEventListener("click", () => showScreen("results"));
     $("candidate-host-link").addEventListener("click", () => {
       const url = state.selectedCandidate?.evidence?.find(e => e.sourceUrl)?.sourceUrl;
       if (url) api.openExternal(url);
     });
+    $("candidate-watch").addEventListener("click", toggleCandidateWatchRun);
+    $("candidate-unwatch").addEventListener("click", stopCandidateWatch);
     document.querySelectorAll(".candidate-tab").forEach(button => {
       button.addEventListener("click", () => switchCandidateTab(button.dataset.candidateTab));
     });
@@ -1525,6 +1841,8 @@
     $("settings-replace-tinyfish").addEventListener("click", () => openKeyModal("tinyfish"));
     $("settings-replace-etherscan").addEventListener("click", () => openKeyModal("etherscan"));
     $("settings-remove-etherscan").addEventListener("click", () => openModal("confirm-modal"));
+    $("settings-replace-rpc").addEventListener("click", () => openKeyModal("rpc"));
+    $("settings-remove-rpc").addEventListener("click", () => openModal("confirm-rpc-modal"));
     $("settings-test-connections").addEventListener("click", () => runConnectionTest(true));
     $("settings-change-folder").addEventListener("click", async () => {
       const chosen = await api.chooseOutputDir();
@@ -1535,10 +1853,11 @@
     $("settings-remove-cli").addEventListener("click", uninstallCliFromUi);
     $("key-modal-form").addEventListener("submit", saveReplacementKey);
     $("confirm-remove-etherscan").addEventListener("click", removeEtherscanKey);
+    $("confirm-remove-rpc").addEventListener("click", removeRpcUrl);
 
     document.addEventListener("keydown", event => {
       if (event.key !== "Escape") return;
-      for (const id of ["connection-modal", "key-modal", "confirm-modal"]) {
+      for (const id of ["connection-modal", "key-modal", "confirm-modal", "confirm-rpc-modal"]) {
         if (!$(id).classList.contains("hidden")) closeModal(id);
       }
     });
@@ -1569,6 +1888,27 @@
       addLog(`ERROR: ${payload.message || "Unknown scan error"}`);
       showToast(payload.message || "Scan failed.", "error");
     });
+    api.onMonitorCycle(payload => {
+      if (!payload) return;
+      addLog(
+        "Monitor " + (payload.name || payload.id || "protocol") +
+        " checked at block " + (payload.blockNumber || "—") +
+        (payload.changed ? " · changes detected" : " · unchanged")
+      );
+    });
+    api.onMonitorAlert(payload => {
+      if (!payload) return;
+      const count = payload.changes?.length || 0;
+      addLog("MONITOR ALERT: " + (payload.name || payload.id || "protocol") + " · " + count + " change(s)");
+      showToast(
+        "Protocol change detected for " + (payload.name || "watched protocol") + ": " + count + " monitored change(s).",
+        "error"
+      );
+    });
+    api.onMonitorError(payload => {
+      if (!payload?.message) return;
+      addLog("MONITOR ERROR: " + payload.message);
+    });
     api.onAnalysisState(payload => setAnalysisRunning(Boolean(payload?.running), payload?.running ? `${payload.label || "Analysis"} is running...` : undefined));
     api.onAnalysisProgress(payload => { if (payload?.message) $("analysis-status").textContent = payload.message; });
     api.onAnalysisError(payload => { if (payload?.message) $("analysis-status").textContent = payload.message; });
@@ -1586,6 +1926,7 @@
       await refreshSettings();
       await refreshCliStatus();
       await refreshAnalysisCapabilities();
+      await refreshMonitors();
       $("setup-secure-warning").classList.toggle("hidden", Boolean(state.settings.secureStorageAvailable));
 
       const last = await api.getLastScan();

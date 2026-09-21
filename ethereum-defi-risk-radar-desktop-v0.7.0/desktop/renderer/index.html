@@ -87,6 +87,15 @@
               </span>
             </label>
 
+            <label class="field-group">
+              <span class="field-label">Ethereum Mainnet RPC <em>optional</em></span>
+              <span class="field-help">Enables pinned state snapshots, bytecode attestation, upgrade intelligence and continuous monitoring. Read-only RPC methods only.</span>
+              <span class="secret-input-wrap">
+                <input id="setup-rpc-url" type="password" autocomplete="off" placeholder="https://your-mainnet-rpc.example/..." />
+                <button class="text-button reveal-button" type="button" data-reveal="setup-rpc-url">Show</button>
+              </span>
+            </label>
+
             <div id="setup-secure-warning" class="notice danger hidden">
               Secure OS encryption is unavailable. API credentials cannot be stored safely on this device.
             </div>
@@ -168,6 +177,7 @@
           <article class="connection-card"><div class="provider-icon eth">◆</div><div><strong>Ethereum Mainnet</strong><small>Chain ID 1</small></div><span class="status-check static">✓</span></article>
           <article class="connection-card"><div class="provider-icon tinyfish">◖</div><div><strong>TinyFish</strong><small id="dashboard-tinyfish-status">Configured</small></div><span id="dashboard-tinyfish-check" class="status-check">•</span></article>
           <article class="connection-card"><div class="provider-icon etherscan">▥</div><div><strong>Etherscan</strong><small id="dashboard-etherscan-status">Optional</small></div><span id="dashboard-etherscan-check" class="status-check neutral">•</span></article>
+          <article class="connection-card"><div class="provider-icon eth">↯</div><div><strong>Read-only RPC</strong><small id="dashboard-rpc-status">Optional</small></div><span id="dashboard-rpc-check" class="status-check neutral">•</span></article>
           <button id="dashboard-test-connections" class="outline-button test-button" type="button">⌁ Test Connections</button>
         </div>
 
@@ -179,7 +189,7 @@
             <label><span>Pages / Query</span><input id="dashboard-pages" type="number" min="1" max="10" /></label>
             <button id="dashboard-start-scan" class="primary-button scan-action" type="button">▷ START SCAN</button>
           </div>
-          <div class="guardrails"><span>◇ No RPC probing</span><span>◇ No transactions</span><span>◇ No exploit generation</span></div>
+          <div class="guardrails"><span>◇ Read-only pinned RPC state when configured</span><span>◇ No transactions during scans</span><span>◇ No exploit generation</span></div>
         </article>
 
         <div class="metric-grid four">
@@ -251,6 +261,7 @@
             <button id="results-show-summary-csv" class="secondary-button" type="button">Summary CSV</button>
             <button id="results-show-findings-csv" class="secondary-button" type="button">Findings CSV</button>
             <button id="results-show-security-html" class="secondary-button" type="button">Security HTML</button>
+            <button id="results-show-sarif" class="secondary-button" type="button">SARIF</button>
           </div>
         </article>
       </section>
@@ -263,6 +274,11 @@
             <div class="candidate-title-row"><h1 id="candidate-title">Candidate</h1><span id="candidate-priority" class="priority-badge">REVIEW</span></div>
             <button id="candidate-host-link" class="host-link" type="button">source.example ↗</button>
           </div>
+          <div class="candidate-actions">
+            <button id="candidate-watch" class="outline-button" type="button">◎ Watch Protocol</button>
+            <button id="candidate-unwatch" class="danger-button hidden" type="button">Stop Watching</button>
+            <span id="candidate-watch-status" class="connected-badge neutral">Not watched</span>
+          </div>
         </header>
 
         <div class="candidate-score-grid">
@@ -272,6 +288,7 @@
 
         <div class="candidate-tabs" role="tablist">
           <button class="candidate-tab active" type="button" data-candidate-tab="overview">Overview</button>
+          <button class="candidate-tab" type="button" data-candidate-tab="intelligence">Protocol Intelligence <span id="candidate-intelligence-count" class="tab-count">0</span></button>
           <button class="candidate-tab" type="button" data-candidate-tab="findings">Security Findings <span id="candidate-findings-count" class="tab-count">0</span></button>
           <button class="candidate-tab" type="button" data-candidate-tab="evidence">Public Evidence <span id="candidate-evidence-count" class="tab-count">0</span></button>
         </div>
@@ -288,6 +305,38 @@
             <p id="candidate-interpretation"></p>
             <p>This classification reflects public historical or structural signals. It does not establish current exploitability.</p>
           </article>
+        </div>
+
+        <div id="candidate-tab-intelligence" class="candidate-tab-panel hidden">
+          <div id="candidate-intelligence-metrics" class="metric-grid six compact"></div>
+          <div id="candidate-intelligence-empty" class="empty-state hidden"><div class="empty-icon">⌁</div><strong>No protocol intelligence bundle</strong><span>Verified-source analysis is required before the graph and invariant engine can produce protocol intelligence.</span></div>
+
+          <div id="candidate-intelligence-content" class="intelligence-layout">
+            <article class="panel intelligence-panel">
+              <div class="panel-title-row"><div><h2>Protocol Knowledge Graph</h2><p>Source-linked contracts, dependencies, assets, calls and findings.</p></div><span id="candidate-graph-digest" class="phase-badge">—</span></div>
+              <div id="candidate-graph-list" class="graph-edge-list"></div>
+            </article>
+
+            <article class="panel intelligence-panel">
+              <div class="panel-title-row"><div><h2>Bytecode Attestation</h2><p>Deployed runtime observation and exact-source recompilation status.</p></div></div>
+              <div id="candidate-attestation-list" class="attestation-list"></div>
+            </article>
+
+            <article class="panel intelligence-panel full-span">
+              <div class="panel-title-row"><div><h2>Applicable DeFi Invariants</h2><p>Protocol-aware properties selected from source categories and security signals.</p></div></div>
+              <div id="candidate-invariant-list" class="invariant-grid"></div>
+            </article>
+
+            <article class="panel intelligence-panel full-span">
+              <div class="panel-title-row"><div><h2>Attack Paths</h2><p>Auditable source-to-impact paths derived from witness/evidence chains. Evidence labels remain separate from severity.</p></div></div>
+              <div id="candidate-attack-paths" class="attack-path-list"></div>
+            </article>
+
+            <article class="panel intelligence-panel full-span">
+              <div class="panel-title-row"><div><h2>Pinned State Snapshot</h2><p>Canonical Ethereum Mainnet block, code fingerprints and EIP-1967 proxy-control surfaces.</p></div><span id="candidate-snapshot-block" class="phase-badge">NOT CAPTURED</span></div>
+              <div id="candidate-snapshot-list" class="snapshot-grid"></div>
+            </article>
+          </div>
         </div>
 
         <div id="candidate-tab-findings" class="candidate-tab-panel hidden">
@@ -388,6 +437,11 @@
             <div class="connection-setting-copy"><div><strong>Etherscan</strong><span id="settings-etherscan-badge" class="connected-badge neutral">Optional</span></div><small>https://api.etherscan.io/v2/api</small></div>
             <div class="inline-actions"><button id="settings-replace-etherscan" class="outline-button" type="button">Replace API Key</button><button id="settings-remove-etherscan" class="danger-button hidden" type="button">Remove</button></div>
           </div>
+          <div class="connection-setting-row">
+            <div class="provider-icon eth">↯</div>
+            <div class="connection-setting-copy"><div><strong>Ethereum Mainnet RPC</strong><span id="settings-rpc-badge" class="connected-badge neutral">Optional</span></div><small>Encrypted locally · read-only methods only · enables pinned state, bytecode attestation and monitoring</small></div>
+            <div class="inline-actions"><button id="settings-replace-rpc" class="outline-button" type="button">Configure RPC</button><button id="settings-remove-rpc" class="danger-button hidden" type="button">Remove</button></div>
+          </div>
         </article>
 
         <form id="settings-form">
@@ -458,6 +512,11 @@
         <div class="test-detail"><span>Endpoint</span><strong>https://api.etherscan.io/v2/api</strong></div>
         <div class="test-detail"><span>Message</span><strong id="connection-etherscan-message">Waiting for response</strong></div>
       </div>
+      <div id="connection-rpc-card" class="connection-test-card">
+        <div class="test-provider-header"><div class="provider-icon eth">↯</div><strong>Ethereum Mainnet RPC</strong><span id="connection-rpc-result" class="test-result pending">Testing…</span></div>
+        <div class="test-detail"><span>Mode</span><strong>Read-only · Ethereum Mainnet only</strong></div>
+        <div class="test-detail"><span>Message</span><strong id="connection-rpc-message">Waiting for response</strong></div>
+      </div>
       <button class="primary-button full-width" type="button" data-close-modal="connection-modal">Close</button>
     </div>
   </div>
@@ -476,6 +535,14 @@
   </div>
 
   <!-- Confirm remove modal -->
+  <div id="confirm-rpc-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-rpc-modal-title">
+    <div class="modal-backdrop" data-close-modal="confirm-rpc-modal"></div>
+    <div class="modal-card small-modal-card">
+      <div class="modal-header"><div><h2 id="confirm-rpc-modal-title">Remove Ethereum RPC?</h2><p>Pinned state snapshots, bytecode attestation, upgrade monitoring and protocol watches will remain unavailable until another read-only Mainnet RPC is configured.</p></div><button class="icon-button" type="button" data-close-modal="confirm-rpc-modal">×</button></div>
+      <div class="form-actions right"><button class="secondary-button" type="button" data-close-modal="confirm-rpc-modal">Cancel</button><button id="confirm-remove-rpc" class="danger-button strong" type="button">Remove RPC</button></div>
+    </div>
+  </div>
+
   <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
     <div class="modal-backdrop" data-close-modal="confirm-modal"></div>
     <div class="modal-card small-modal-card">

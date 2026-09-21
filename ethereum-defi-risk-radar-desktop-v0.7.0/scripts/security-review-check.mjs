@@ -133,7 +133,7 @@ try {
   };
 
   const reports = await writeReports({ candidates: [candidate], outputDir: tempDir, startYear: 2026, endYear: 2026 });
-  for (const key of ["jsonPath", "csvPath", "summaryCsvPath", "findingsCsvPath", "securityReviewPath"]) {
+  for (const key of ["jsonPath", "csvPath", "summaryCsvPath", "findingsCsvPath", "securityReviewPath", "sarifPath"]) {
     assert.ok(reports[key], `Missing report path: ${key}`);
     await fs.access(reports[key]);
   }
@@ -143,8 +143,9 @@ try {
   const summaryCsv = await fs.readFile(reports.summaryCsvPath, "utf8");
   const findingsCsv = await fs.readFile(reports.findingsCsvPath, "utf8");
   const securityHtml = await fs.readFile(reports.securityReviewPath, "utf8");
+  const sarif = await fs.readFile(reports.sarifPath, "utf8");
 
-  for (const output of [json, detailedCsv, summaryCsv, findingsCsv, securityHtml]) {
+  for (const output of [json, detailedCsv, summaryCsv, findingsCsv, securityHtml, sarif]) {
     assert.equal(output.includes(rawAddress), false, "Raw EVM address leaked into a report artifact.");
   }
   assert.ok(json.includes('"findingRows"'), "Detailed JSON finding rows are missing.");
@@ -152,6 +153,7 @@ try {
   assert.ok(summaryCsv.includes('"assessmentStatus"') && summaryCsv.includes('"analysisPartial"'), "Summary CSV assessment/completeness fields are missing.");
   assert.ok(findingsCsv.includes('"severity"') && findingsCsv.includes('"evidenceKey"') && findingsCsv.includes('"exploitabilityVerdict"'), "Finding CSV evidence schema is incomplete.");
   assert.ok(securityHtml.includes("Finding-first security review"), "Standalone HTML security review is missing its title.");
+  assert.ok(sarif.includes('"version": "2.1.0"') && sarif.includes('"runs"'), "SARIF 2.1.0 report is missing or malformed.");
   assert.ok(securityHtml.includes("&lt;img src=x onerror=alert(1)&gt;"), "Standalone HTML report must escape protocol labels.");
   assert.equal(securityHtml.includes("<img src=x onerror=alert(1)>"), false, "Standalone HTML report rendered unescaped protocol content.");
   assert.ok(summaryCsv.includes("'=HYPERLINK"), "CSV formula-injection protection was not applied to protocol labels.");

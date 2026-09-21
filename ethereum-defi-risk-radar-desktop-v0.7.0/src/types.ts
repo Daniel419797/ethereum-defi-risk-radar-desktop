@@ -1,4 +1,7 @@
 import type { SourceInspection } from "./sourceAnalyzer.js";
+import type { BytecodeAnalysisReport } from "./analysis/bytecode/analyzer.js";
+import type { SourceLanguageProfile } from "./intelligence/sourceLanguage.js";
+import type { BytecodeAttestation, PinnedStateSnapshot, ProtocolIntelligenceBundle } from "./intelligence/model.js";
 
 export type TinyFishResult = {
   title?: string;
@@ -58,7 +61,27 @@ export type ContractInspectionSummary = {
   contractName?: string;
   compilerVersion?: string;
   proxy: boolean;
+  /** Raw address is kept only in-memory/local state; generated reports redact it. */
+  address?: string;
+  bytecodeAttestation?: BytecodeAttestation;
+  bytecodeAnalysis?: BytecodeAnalysisReport;
+  sourceLanguageProfile?: SourceLanguageProfile;
   inspection: SourceInspection;
+};
+
+export type BytecodeInspectionSummary = {
+  contractRefId: string;
+  rootContractRefId?: string;
+  sourceRole?: "DIRECT" | "PROXY" | "IMPLEMENTATION";
+  contractName?: string;
+  compilerVersion?: string;
+  proxy: boolean;
+  sourceVerified: boolean;
+  /** Raw address stays local/in-memory; report serialization redacts EVM addresses. */
+  address?: string;
+  bytecodeAttestation?: BytecodeAttestation;
+  bytecodeAnalysis: BytecodeAnalysisReport;
+  sourceLanguageProfile?: SourceLanguageProfile;
 };
 
 export type EthereumMetadata = {
@@ -73,13 +96,18 @@ export type EthereumMetadata = {
   sourceFindingCount: number;
   sourceHighReviewCount: number;
   advancedFindingCount: number;
+  bytecodeContractsAnalyzed: number;
+  bytecodeFindingCount: number;
   sourceInspections: ContractInspectionSummary[];
+  bytecodeInspections: BytecodeInspectionSummary[];
+  pinnedStateSnapshot?: PinnedStateSnapshot;
+  intelligence?: ProtocolIntelligenceBundle;
 };
 
 export type Candidate = {
   id: string;
   entityKind: "PROTOCOL";
-  resolutionStatus: "CONTRACTS_VERIFIED" | "SOURCE_ANALYZED";
+  resolutionStatus: "BYTECODE_ANALYZED" | "CONTRACTS_VERIFIED" | "SOURCE_ANALYZED";
   label: string;
   hostname: string;
   chain: "ethereum";

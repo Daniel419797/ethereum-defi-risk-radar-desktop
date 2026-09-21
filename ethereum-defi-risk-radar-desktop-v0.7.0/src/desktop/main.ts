@@ -24,8 +24,35 @@ import { runProtocolScenarios, type ProtocolObservations } from "../analysis/pro
 import { replayOnPinnedAnvil, type ForkReplaySpec } from "../analysis/reproduction.js";
 import { analyzeProjectFromDesktop, replayForkFromDesktop, simulateEconomicFromDesktop, simulateProtocolFromDesktop } from "./analysisLab.js";
 import type { Candidate } from "../types.js";
+import { ReadOnlyEthereumRpcClient } from "../intelligence/rpc.js";
+import { capturePinnedStateSnapshot } from "../intelligence/snapshot.js";
+import { compareProtocolUpgrade } from "../intelligence/upgrade.js";
+import {
+  BENCHMARK_CORPUS_COMMITS,
+  benchmarkMarkdown,
+  evaluateBenchmark,
+  loadCveSmartContracts,
+  loadDefiHackLabs,
+  loadSmartBugsCurated
+} from "../intelligence/benchmark.js";
+import {
+  runDefiHackLabsReproductionBenchmark,
+  runSourceBenchmark
+} from "../intelligence/benchmarkRunner.js";
+import {
+  readMonitorRegistry,
+  removeProtocolWatch,
+  runDueProtocolWatches,
+  runProtocolWatch,
+  upsertProtocolWatch
+} from "../intelligence/monitorStore.js";
+import type {
+  BenchmarkCase,
+  BenchmarkPrediction,
+  PinnedStateSnapshot
+} from "../intelligence/model.js";
 
-const STORE_VERSION = 1;
+const STORE_VERSION = 2;
 const execFileAsync = promisify(execFile);
 
 interface Preferences {
@@ -43,12 +70,14 @@ interface PersistedStore {
   version: number;
   encryptedTinyfishApiKey?: string;
   encryptedEtherscanApiKey?: string;
+  encryptedEthereumRpcUrl?: string;
   preferences?: Partial<Preferences>;
 }
 
 interface PublicSettings extends Preferences {
   hasTinyfishApiKey: boolean;
   hasEtherscanApiKey: boolean;
+  hasEthereumRpcUrl: boolean;
   secureStorageAvailable: boolean;
   firstRun: boolean;
 }
@@ -56,7 +85,9 @@ interface PublicSettings extends Preferences {
 interface SaveSettingsPayload extends Partial<Preferences> {
   tinyfishApiKey?: string;
   etherscanApiKey?: string;
+  ethereumRpcUrl?: string;
   clearEtherscanApiKey?: boolean;
+  clearEthereumRpcUrl?: boolean;
 }
 
 interface ScanRequest {
@@ -80,6 +111,7 @@ let mainWindow: BrowserWindow | null = null;
 let scanRunning = false;
 let lastScan: ScanResult | null = null;
 let analysisController: AbortController | null = null;
+let monitorTimer: NodeJS.Timeout | null = null;
 const authorizedAnalysisPaths = new Set<string>();
 
 function clampInt(value: unknown, fallback: number, min: number, max: number) {
@@ -90,6 +122,14 @@ function clampInt(value: unknown, fallback: number, min: number, max: number) {
 
 function defaultOutputDir() {
   return path.join(app.getPath("documents"), "Ethereum DeFi Risk Radar", "reports");
+}
+
+function monitorRegistryPath() {
+  return path.join(app.getPath("userData"), "protocol-monitors.json");
+}
+
+function benchmarkOutputDir() {
+  return path.join(app.getPath("documents"), "Ethereum DeFi Risk Radar", "benchmarks");
 }
 
 function defaultPreferences(): Preferences {
@@ -205,10 +245,12 @@ async function getPublicSettings(): Promise<PublicSettings> {
   const preferences = normalizePreferences(store.preferences);
   const hasTinyfishApiKey = Boolean(decryptSecret(store.encryptedTinyfishApiKey));
   const hasEtherscanApiKey = Boolean(decryptSecret(store.encryptedEtherscanApiKey));
+  const hasEthereumRpcUrl = Boolean(decryptSecret(store.encryptedEthereumRpcUrl));
   return {
     ...preferences,
     hasTinyfishApiKey,
     hasEtherscanApiKey,
+    hasEthereumRpcUrl,
     secureStorageAvailable: safeStorage.isEncryptionAvailable(),
     firstRun: !hasTinyfishApiKey
   };
@@ -229,6 +271,14 @@ async function saveSettings(payload: SaveSettingsPayload): Promise<PublicSetting
     store.encryptedEtherscanApiKey = encryptSecret(payload.etherscanApiKey.trim());
   }
 
+  if (payload.clearEthereumRpcUrl) {
+    delete store.encryptedEthereumRpcUrl;
+  } else if (payload.ethereumRpcUrl?.trim()) {
+    const rpcUrl = payload.ethereumRpcUrl.trim();
+    new ReadOnlyEthereumRpcClient(rpcUrl);
+    store.encryptedEthereumRpcUrl = encryptSecret(rpcUrl);
+  }
+
   if (!decryptSecret(store.encryptedTinyfishApiKey)) {
     throw new Error("TinyFish API key is required before scanning.");
   }
@@ -244,7 +294,8 @@ async function runtimeConfig() {
   return {
     preferences: normalizePreferences(store.preferences),
     tinyfishApiKey: decryptSecret(store.encryptedTinyfishApiKey),
-    etherscanApiKey: decryptSecret(store.encryptedEtherscanApiKey)
+    etherscanApiKey: decryptSecret(store.encryptedEtherscanApiKey),
+    ethereumRpcUrl: decryptSecret(store.encryptedEthereumRpcUrl)
   };
 }
 
@@ -298,11 +349,16 @@ async function testConnections() {
   const result: {
     tinyfish: { ok: boolean; message: string };
     etherscan: { ok: boolean | null; message: string };
+    ethereumRpc: { ok: boolean | null; message: string };
   } = {
     tinyfish: { ok: false, message: "Not tested" },
     etherscan: {
       ok: cfg.etherscanApiKey ? false : null,
       message: cfg.etherscanApiKey ? "Not tested" : "Not configured"
+    },
+    ethereumRpc: {
+      ok: cfg.ethereumRpcUrl ? false : null,
+      message: cfg.ethereumRpcUrl ? "Not tested" : "Not configured"
     }
   };
 
@@ -313,13 +369,18 @@ async function testConnections() {
     });
     const response = await tinyfish.search({
       query: "Ethereum DeFi security",
-      purpose: "Connection test for a defensive Ethereum DeFi OSINT research application.",
+      purpose:
+        "Connection test for a defensive Ethereum DeFi OSINT research application.",
       language: "en",
       page: 0
     });
     result.tinyfish = {
       ok: true,
-      message: `Connected${Array.isArray(response.results) ? ` · ${response.results.length} results received` : ""}`
+      message:
+        "Connected" +
+        (Array.isArray(response.results)
+          ? " · " + response.results.length + " results received"
+          : "")
     };
   } catch (error) {
     result.tinyfish = {
@@ -331,13 +392,39 @@ async function testConnections() {
   if (cfg.etherscanApiKey) {
     try {
       const etherscan = new EtherscanClient(cfg.etherscanApiKey);
-      // WETH Mainnet is used only as a harmless verified-source API connectivity check.
-      await etherscan.getSourceMetadata("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", {
-        inspectSource: false
-      });
-      result.etherscan = { ok: true, message: "Connected to Etherscan API V2" };
+      await etherscan.getSourceMetadata(
+        "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        { inspectSource: false }
+      );
+      result.etherscan = {
+        ok: true,
+        message: "Connected to Etherscan API V2"
+      };
     } catch (error) {
       result.etherscan = {
+        ok: false,
+        message: error instanceof Error ? error.message : "Connection failed"
+      };
+    }
+  }
+
+  if (cfg.ethereumRpcUrl) {
+    try {
+      const rpc = new ReadOnlyEthereumRpcClient(cfg.ethereumRpcUrl);
+      const chainId = await rpc.getChainId();
+      if (chainId !== 1) throw new Error("RPC chainId is " + chainId + ", expected Ethereum Mainnet chainId 1.");
+      const block = await rpc.getBlock("latest");
+      result.ethereumRpc = {
+        ok: true,
+        message:
+          "Ethereum Mainnet · block #" +
+          block.number +
+          " · " +
+          block.hash.slice(0, 12) +
+          "…"
+      };
+    } catch (error) {
+      result.ethereumRpc = {
         ok: false,
         message: error instanceof Error ? error.message : "Connection failed"
       };
@@ -386,6 +473,9 @@ async function startScan(request: ScanRequest) {
     const etherscan = cfg.etherscanApiKey
       ? new EtherscanClient(cfg.etherscanApiKey)
       : undefined;
+    const chainReader = cfg.ethereumRpcUrl
+      ? new ReadOnlyEthereumRpcClient(cfg.ethereumRpcUrl)
+      : undefined;
 
     const candidates = await scanLegacyEthereumDefi({
       client: tinyfish,
@@ -399,6 +489,8 @@ async function startScan(request: ScanRequest) {
       inspectVerifiedSource: cfg.preferences.inspectVerifiedSource,
       maxSourceBytes: cfg.preferences.maxSourceBytes,
       maxSourceFindings: cfg.preferences.maxSourceFindingsPerContract,
+      chainReader,
+      attestBytecode: Boolean(chainReader),
       onProgress: message =>
         send("scan:log", { message, at: new Date().toISOString() }),
       onProgressEvent: event => send("scan:progress", event)
@@ -406,7 +498,7 @@ async function startScan(request: ScanRequest) {
 
     send("scan:progress", {
       phase: "REPORT",
-      message: "Writing JSON and CSV reports",
+      message: "Writing JSON, CSV, HTML and SARIF reports",
       completed: 1,
       total: 1,
       overallPercent: 98
@@ -807,11 +899,13 @@ Usage:
 Commands:
   scan                  Run a defensive Ethereum Mainnet research scan
   status                Show configuration and CLI installation status
-  test-connections      Test TinyFish and optional Etherscan credentials
+  test-connections      Test TinyFish, Etherscan and read-only Mainnet RPC
   config show           Show saved non-secret configuration
-  config set <key> <v>  Update a saved setting (API keys prompt securely)
+  config set <key> <v>  Update a saved setting (secrets prompt securely)
   config remove etherscan-key
                         Remove the optional Etherscan credential
+  config remove rpc-url
+                        Remove the encrypted read-only Ethereum RPC URL
   reports               List recent generated reports
   open-reports          Open the configured reports directory
   install-cli           Install/repair the global risk-radar command
@@ -826,6 +920,17 @@ Commands:
                         Run scenario packs against a source-linked protocol model
   replay-fork <spec.json> --confirm-fork
                         Replay transactions on a pinned loopback Anvil fork
+  snapshot-state <spec.json> [--out=<file>]
+                        Capture canonical code/proxy/probe state at a pinned block
+  upgrade-diff <before.json> <after.json> [--out=<file>]
+                        Compare historical protocol snapshots
+  monitor list
+  monitor add <name> <spec.json>
+  monitor remove <id-or-name>
+  monitor run <id-or-name|--all>
+                        Maintain and execute persistent protocol watches
+  benchmark <smartbugs|cve|defihacklabs> <corpus-root>
+                        Run an evidence-grade pinned-corpus benchmark
   version               Print the application version
   help                  Show this help
 
@@ -843,6 +948,7 @@ Project analysis options:
 Configuration keys:
   tinyfish-key          Secure TinyFish API key (interactive prompt)
   etherscan-key         Secure Etherscan API key (interactive prompt)
+  rpc-url               Secure read-only Ethereum Mainnet RPC URL (interactive prompt)
   endpoint              TinyFish Search endpoint
   pages                 Default pages per query
   min-signals           Minimum public signals
@@ -900,6 +1006,7 @@ async function cliConfigShow() {
   console.log(JSON.stringify({
     tinyfishApiKey: settings.hasTinyfishApiKey ? "configured" : "missing",
     etherscanApiKey: settings.hasEtherscanApiKey ? "configured" : "not configured",
+    ethereumRpcUrl: settings.hasEthereumRpcUrl ? "configured" : "not configured",
     tinyfishEndpoint: settings.tinyfishEndpoint,
     maxPagesPerQuery: settings.maxPagesPerQuery,
     minPublicSignals: settings.minPublicSignals,
@@ -915,11 +1022,23 @@ async function cliConfigShow() {
 async function cliConfigSet(args: string[]) {
   const key = args[0];
   if (!key) throw new Error("Usage: risk-radar config set <key> <value>");
-  if (key === "tinyfish-key" || key === "etherscan-key") {
-    const secret = await promptSecret(key === "tinyfish-key" ? "TinyFish API key" : "Etherscan API key");
-    if (!secret) throw new Error("API key cannot be empty.");
-    await saveSettings(key === "tinyfish-key" ? { tinyfishApiKey: secret } : { etherscanApiKey: secret });
-    console.log(`${key} saved with OS-backed encryption.`);
+  if (key === "tinyfish-key" || key === "etherscan-key" || key === "rpc-url") {
+    const label =
+      key === "tinyfish-key"
+        ? "TinyFish API key"
+        : key === "etherscan-key"
+          ? "Etherscan API key"
+          : "Ethereum Mainnet RPC URL";
+    const secret = await promptSecret(label);
+    if (!secret) throw new Error(label + " cannot be empty.");
+    const payload =
+      key === "tinyfish-key"
+        ? { tinyfishApiKey: secret }
+        : key === "etherscan-key"
+          ? { etherscanApiKey: secret }
+          : { ethereumRpcUrl: secret };
+    await saveSettings(payload);
+    console.log(key + " saved with OS-backed encryption.");
     return;
   }
 
@@ -979,6 +1098,7 @@ async function cliScan(args: string[]) {
 
   const tinyfish = new TinyFishSearchClient({ apiKey: cfg.tinyfishApiKey, endpoint: cfg.preferences.tinyfishEndpoint });
   const etherscan = cfg.etherscanApiKey ? new EtherscanClient(cfg.etherscanApiKey) : undefined;
+  const chainReader = cfg.ethereumRpcUrl ? new ReadOnlyEthereumRpcClient(cfg.ethereumRpcUrl) : undefined;
   console.log(`Ethereum DeFi Risk Radar v${app.getVersion()}`);
   console.log(`Ethereum Mainnet (chain 1) · ${startYear}-${endYear}`);
   console.log(`TinyFish pages/query: ${pagesPerQuery} · Etherscan: ${etherscan ? "ON" : "OFF"} · verified-source inspection: ${etherscan && cfg.preferences.inspectVerifiedSource ? "ON" : "OFF"}`);
@@ -995,6 +1115,8 @@ async function cliScan(args: string[]) {
     inspectVerifiedSource: cfg.preferences.inspectVerifiedSource,
     maxSourceBytes: cfg.preferences.maxSourceBytes,
     maxSourceFindings: cfg.preferences.maxSourceFindingsPerContract,
+    chainReader,
+    attestBytecode: Boolean(chainReader),
     onProgress: quiet ? undefined : message => console.log(message),
     onProgressEvent: quiet ? event => {
       if (event.overallPercent === 70 || event.overallPercent === 95) console.log(`${event.overallPercent}% · ${event.message}`);
@@ -1015,6 +1137,7 @@ async function cliScan(args: string[]) {
   })));
   console.log(`JSON: ${paths.jsonPath}`);
   console.log(`CSV:  ${paths.csvPath}`);
+  console.log(`SARIF: ${paths.sarifPath}`);
 }
 
 async function cliDoctor() {
@@ -1035,6 +1158,7 @@ async function cliDoctor() {
     ["Secure storage", settings.secureStorageAvailable ? "available" : "unavailable", settings.secureStorageAvailable],
     ["TinyFish key", settings.hasTinyfishApiKey ? "configured" : "missing", settings.hasTinyfishApiKey],
     ["Etherscan key", settings.hasEtherscanApiKey ? "configured" : "optional / not configured", true],
+    ["Ethereum RPC", settings.hasEthereumRpcUrl ? "configured for read-only state intelligence" : "optional / not configured", true],
     ["Reports directory", outputWritable ? "writable" : "not writable", outputWritable],
     ["Global CLI", cli.installed ? cli.commandPath : "not installed", cli.installed]
   ] as Array<[string, string, boolean]>;
@@ -1139,6 +1263,371 @@ async function cliReplayFork(args: string[]) {
   return finding ? 3 : 0;
 }
 
+
+async function readBoundedJson<T>(filePath: string, maxBytes = 5_000_000): Promise<T> {
+  const resolved = path.resolve(filePath);
+  const stat = await fs.stat(resolved);
+  if (!stat.isFile() || stat.size > maxBytes) {
+    throw new Error("JSON input must be a file no larger than " + maxBytes + " bytes.");
+  }
+  return JSON.parse(await fs.readFile(resolved, "utf8")) as T;
+}
+
+async function configuredMainnetReader() {
+  const cfg = await runtimeConfig();
+  if (!cfg.ethereumRpcUrl) {
+    throw new Error(
+      "A read-only Ethereum Mainnet RPC is required. Configure it with: risk-radar config set rpc-url"
+    );
+  }
+  const reader = new ReadOnlyEthereumRpcClient(cfg.ethereumRpcUrl);
+  const chainId = await reader.getChainId();
+  if (chainId !== 1) {
+    throw new Error("Configured RPC is not Ethereum Mainnet chainId 1.");
+  }
+  return reader;
+}
+
+async function cliSnapshotState(args: string[]) {
+  const positional = args.filter(arg => !arg.startsWith("--"));
+  if (!positional[0]) {
+    throw new Error(
+      "Usage: risk-radar snapshot-state <spec.json> [--out=<snapshot.json>]"
+    );
+  }
+
+  const input = await readBoundedJson<{
+    blockNumber?: number;
+    targets?: Array<{
+      address: string;
+      contractRefId: string;
+      callProbes?: Array<{ id: string; data: string }>;
+    }>;
+  }>(positional[0]);
+
+  if (!Array.isArray(input.targets) || !input.targets.length) {
+    throw new Error("Snapshot specification requires a non-empty targets array.");
+  }
+
+  const reader = await configuredMainnetReader();
+  const snapshot = await capturePinnedStateSnapshot({
+    reader,
+    targets: input.targets,
+    blockNumber: input.blockNumber
+  });
+
+  const outputPath = path.resolve(
+    cliOption(args, "out") ||
+      path.join(
+        (await runtimeConfig()).preferences.outputDir,
+        "protocol-state-" + snapshot.blockNumber + "-" + Date.now() + ".json"
+      )
+  );
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(outputPath, JSON.stringify(snapshot, null, 2), {
+    encoding: "utf8",
+    mode: 0o600
+  });
+  console.log(JSON.stringify({
+    snapshot: outputPath,
+    blockNumber: snapshot.blockNumber,
+    blockHash: snapshot.blockHash,
+    contracts: snapshot.contracts.length,
+    partial: snapshot.partial,
+    digest: snapshot.digest
+  }, null, 2));
+  return snapshot.partial ? 2 : 0;
+}
+
+async function cliUpgradeDiff(args: string[]) {
+  const positional = args.filter(arg => !arg.startsWith("--"));
+  if (positional.length < 2) {
+    throw new Error(
+      "Usage: risk-radar upgrade-diff <before.json> <after.json> [--out=<diff.json>]"
+    );
+  }
+
+  const previousSnapshot =
+    await readBoundedJson<PinnedStateSnapshot>(positional[0], 20_000_000);
+  const currentSnapshot =
+    await readBoundedJson<PinnedStateSnapshot>(positional[1], 20_000_000);
+  const comparison = compareProtocolUpgrade({
+    previousSnapshot,
+    currentSnapshot
+  });
+
+  const outputPath = path.resolve(
+    cliOption(args, "out") ||
+      path.join(
+        (await runtimeConfig()).preferences.outputDir,
+        "upgrade-diff-" +
+          previousSnapshot.blockNumber +
+          "-" +
+          currentSnapshot.blockNumber +
+          ".json"
+      )
+  );
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(outputPath, JSON.stringify(comparison, null, 2), {
+    encoding: "utf8",
+    mode: 0o600
+  });
+  console.log(JSON.stringify({
+    report: outputPath,
+    changed: comparison.changed,
+    critical: comparison.critical,
+    high: comparison.high,
+    medium: comparison.medium,
+    changes: comparison.changes.length
+  }, null, 2));
+  return comparison.critical || comparison.high ? 3 : comparison.changed ? 2 : 0;
+}
+
+async function cliMonitor(args: string[]) {
+  const action = (args.shift() || "list").toLowerCase();
+  const registryPath = monitorRegistryPath();
+
+  if (action === "list") {
+    const registry = await readMonitorRegistry(registryPath);
+    console.table(
+      registry.watches.map(watch => ({
+        id: watch.id,
+        name: watch.name,
+        everyMinutes: watch.intervalMinutes,
+        targets: watch.targets.length,
+        lastBlock: watch.lastSnapshot?.blockNumber ?? "—",
+        lastRun: watch.lastRunAt ?? "never"
+      }))
+    );
+    return 0;
+  }
+
+  if (action === "add") {
+    const name = args.shift();
+    const specPath = args.shift();
+    if (!name || !specPath) {
+      throw new Error(
+        "Usage: risk-radar monitor add <name> <spec.json>"
+      );
+    }
+    const spec = await readBoundedJson<{
+      intervalMinutes?: number;
+      targets?: Array<{
+        address: string;
+        contractRefId: string;
+        callProbes?: Array<{ id: string; data: string }>;
+      }>;
+    }>(specPath);
+    if (!Array.isArray(spec.targets) || !spec.targets.length) {
+      throw new Error("Monitor specification requires a non-empty targets array.");
+    }
+    const watch = await upsertProtocolWatch(registryPath, {
+      name,
+      intervalMinutes: spec.intervalMinutes,
+      targets: spec.targets
+    });
+    console.log(JSON.stringify({
+      id: watch.id,
+      name: watch.name,
+      intervalMinutes: watch.intervalMinutes,
+      targets: watch.targets.length
+    }, null, 2));
+    return 0;
+  }
+
+  if (action === "remove") {
+    const idOrName = args.shift();
+    if (!idOrName) {
+      throw new Error("Usage: risk-radar monitor remove <id-or-name>");
+    }
+    const removed = await removeProtocolWatch(registryPath, idOrName);
+    if (!removed) throw new Error("Protocol monitor watch not found.");
+    console.log("Protocol monitor watch removed.");
+    return 0;
+  }
+
+  if (action === "run") {
+    const reader = await configuredMainnetReader();
+    const runAll = cliFlag(args, "all");
+    if (runAll) {
+      const registry = await readMonitorRegistry(registryPath);
+      const results = [];
+      for (const watch of registry.watches) {
+        results.push(await runProtocolWatch(registryPath, reader, watch.id));
+      }
+      console.log(JSON.stringify(results.map(result => ({
+        id: result.watchId,
+        name: result.name,
+        block: result.snapshot.blockNumber,
+        changed: result.diff?.changed ?? false,
+        changes: result.diff?.changes ?? []
+      })), null, 2));
+      return results.some(result => result.diff?.changed) ? 3 : 0;
+    }
+
+    const idOrName = args.find(arg => !arg.startsWith("--"));
+    if (!idOrName) {
+      throw new Error(
+        "Usage: risk-radar monitor run <id-or-name> | risk-radar monitor run --all"
+      );
+    }
+    const result = await runProtocolWatch(registryPath, reader, idOrName);
+    console.log(JSON.stringify({
+      id: result.watchId,
+      name: result.name,
+      block: result.snapshot.blockNumber,
+      changed: result.diff?.changed ?? false,
+      changes: result.diff?.changes ?? []
+    }, null, 2));
+    return result.diff?.changed ? 3 : 0;
+  }
+
+  throw new Error(
+    "Usage: risk-radar monitor list | add <name> <spec.json> | remove <id-or-name> | run <id-or-name|--all>"
+  );
+}
+
+function benchmarkCommitFor(corpus: string) {
+  if (corpus === "smartbugs") return BENCHMARK_CORPUS_COMMITS.SMARTBUGS_CURATED;
+  if (corpus === "cve") return BENCHMARK_CORPUS_COMMITS.CVE_SMART_CONTRACTS;
+  if (corpus === "defihacklabs") return BENCHMARK_CORPUS_COMMITS.DEFIHACKLABS;
+  throw new Error("Unknown benchmark corpus: " + corpus);
+}
+
+async function assertPinnedCorpusCommit(root: string, corpus: string) {
+  const expected = benchmarkCommitFor(corpus);
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["-C", path.resolve(root), "rev-parse", "HEAD"],
+      { timeout: 10_000, maxBuffer: 1_000_000 }
+    );
+    const actual = stdout.trim().toLowerCase();
+    if (actual !== expected.toLowerCase()) {
+      throw new Error(
+        "Corpus checkout is not pinned to the required commit. Expected " +
+          expected +
+          ", received " +
+          actual +
+          "."
+      );
+    }
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes("Corpus checkout is not pinned")
+    ) {
+      throw error;
+    }
+    throw new Error(
+      "Unable to verify benchmark corpus commit. Use a git checkout pinned to " +
+        expected +
+        ". " +
+        (error instanceof Error ? error.message : String(error))
+    );
+  }
+}
+
+async function loadBenchmarkCases(
+  corpus: string,
+  root: string
+): Promise<BenchmarkCase[]> {
+  if (corpus === "smartbugs") return loadSmartBugsCurated(root);
+  if (corpus === "cve") return loadCveSmartContracts(root);
+  if (corpus === "defihacklabs") return loadDefiHackLabs(root);
+  throw new Error(
+    "Benchmark corpus must be smartbugs, cve, or defihacklabs."
+  );
+}
+
+async function cliBenchmark(args: string[]) {
+  const positional = args.filter(arg => !arg.startsWith("--"));
+  const corpus = positional[0]?.toLowerCase();
+  const root = positional[1];
+  if (!corpus || !root) {
+    throw new Error(
+      "Usage: risk-radar benchmark <smartbugs|cve|defihacklabs> <corpus-root> [--max-cases=100] [--trust-corpus]"
+    );
+  }
+
+  await assertPinnedCorpusCommit(root, corpus);
+  const cases = await loadBenchmarkCases(corpus, root);
+  const maxCases = Math.max(
+    1,
+    Math.min(
+      Number.parseInt(cliOption(args, "max-cases") || String(cases.length), 10),
+      corpus === "defihacklabs" ? 500 : 10_000
+    )
+  );
+
+  let predictions: BenchmarkPrediction[];
+  if (corpus === "defihacklabs") {
+    predictions = await runDefiHackLabsReproductionBenchmark({
+      root,
+      cases,
+      maxCases,
+      trusted: cliFlag(args, "trust-corpus"),
+      timeoutMs:
+        Math.max(
+          5,
+          Math.min(
+            Number.parseInt(cliOption(args, "timeout") || "180", 10),
+            900
+          )
+        ) * 1_000
+    });
+  } else {
+    predictions = await runSourceBenchmark({
+      root,
+      cases,
+      maxCases
+    });
+  }
+
+  const executedCases = cases.slice(0, maxCases);
+  const metrics = evaluateBenchmark(executedCases, predictions);
+  const outputDir = path.resolve(
+    cliOption(args, "out-dir") || benchmarkOutputDir()
+  );
+  await fs.mkdir(outputDir, { recursive: true });
+  const stamp = metrics.generatedAt.replace(/[:.]/g, "-");
+  const baseName = "risk-radar-benchmark-" + corpus + "-" + stamp;
+  const jsonPath = path.join(outputDir, baseName + ".json");
+  const markdownPath = path.join(outputDir, baseName + ".md");
+  await fs.writeFile(
+    jsonPath,
+    JSON.stringify(
+      {
+        scannerVersion: app.getVersion(),
+        corpus,
+        corpusCommit: benchmarkCommitFor(corpus),
+        metrics,
+        executedCaseIds: executedCases.map(item => item.id),
+        predictions
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await fs.writeFile(markdownPath, benchmarkMarkdown(metrics), "utf8");
+
+  console.log(JSON.stringify({
+    corpus,
+    pinnedCommit: benchmarkCommitFor(corpus),
+    cases: metrics.caseCount,
+    precision: metrics.precision,
+    recall: metrics.recall,
+    f1: metrics.f1,
+    falsePositiveRate: metrics.falsePositiveRate,
+    lineLocationAccuracy: metrics.lineLocationAccuracy,
+    reproductionRate: metrics.reproductionRate,
+    jsonPath,
+    markdownPath
+  }, null, 2));
+  return 0;
+}
+
 async function runDesktopCli() {
   const args = cliArgs();
   const command = (args.shift() || "help").toLowerCase();
@@ -1157,7 +1646,12 @@ async function runDesktopCli() {
         const result = await testConnections();
         console.log(`TinyFish: ${result.tinyfish.ok ? "CONNECTED" : "FAILED"} · ${result.tinyfish.message}`);
         console.log(`Etherscan: ${result.etherscan.ok === null ? "NOT CONFIGURED" : result.etherscan.ok ? "CONNECTED" : "FAILED"} · ${result.etherscan.message}`);
-        return result.tinyfish.ok && (result.etherscan.ok === null || result.etherscan.ok) ? 0 : 2;
+        console.log(`Ethereum RPC: ${result.ethereumRpc.ok === null ? "NOT CONFIGURED" : result.ethereumRpc.ok ? "CONNECTED" : "FAILED"} · ${result.ethereumRpc.message}`);
+        return result.tinyfish.ok &&
+          (result.etherscan.ok === null || result.etherscan.ok) &&
+          (result.ethereumRpc.ok === null || result.ethereumRpc.ok)
+          ? 0
+          : 2;
       }
       case "config": {
         const sub = (args.shift() || "show").toLowerCase();
@@ -1168,7 +1662,12 @@ async function runDesktopCli() {
           console.log("Etherscan API key removed.");
           return 0;
         }
-        throw new Error("Usage: risk-radar config show | config set <key> <value> | config remove etherscan-key");
+        if (sub === "remove" && args[0] === "rpc-url") {
+          await saveSettings({ clearEthereumRpcUrl: true });
+          console.log("Ethereum RPC URL removed.");
+          return 0;
+        }
+        throw new Error("Usage: risk-radar config show | config set <key> <value> | config remove etherscan-key|rpc-url");
       }
       case "reports": await cliReports(); return 0;
       case "open-reports": {
@@ -1187,12 +1686,80 @@ async function runDesktopCli() {
       case "simulate-economic": return await cliSimulateEconomic(args);
       case "simulate-protocol": return await cliSimulateProtocol(args);
       case "replay-fork": return await cliReplayFork(args);
+      case "snapshot-state": return await cliSnapshotState(args);
+      case "upgrade-diff": return await cliUpgradeDiff(args);
+      case "monitor": return await cliMonitor(args);
+      case "benchmark": return await cliBenchmark(args);
       default: throw new Error(`Unknown command: ${command}. Run risk-radar help.`);
     }
   } catch (error) {
     console.error(`risk-radar: ${error instanceof Error ? error.message : String(error)}`);
     return 1;
   }
+}
+
+
+async function watchCandidate(candidateId: string, intervalMinutes = 15) {
+  const candidate = lastScan?.candidates.find(item => item.id === candidateId);
+  if (!candidate) {
+    throw new Error("Candidate is not available in the current completed scan.");
+  }
+  const targets = candidate.ethereum.sourceInspections
+    .filter(inspection => Boolean(inspection.address))
+    .map(inspection => ({
+      address: inspection.address!,
+      contractRefId: inspection.contractRefId
+    }));
+  if (!targets.length) {
+    throw new Error("Candidate has no resolved contract targets to monitor.");
+  }
+  return upsertProtocolWatch(monitorRegistryPath(), {
+    name: candidate.label,
+    protocolId: candidate.id,
+    intervalMinutes,
+    targets
+  });
+}
+
+async function runBackgroundMonitorCycle() {
+  try {
+    const cfg = await runtimeConfig();
+    if (!cfg.ethereumRpcUrl) return;
+    const registry = await readMonitorRegistry(monitorRegistryPath());
+    if (!registry.watches.length) return;
+    const reader = new ReadOnlyEthereumRpcClient(cfg.ethereumRpcUrl);
+    const results = await runDueProtocolWatches(monitorRegistryPath(), reader);
+    for (const result of results) {
+      send("monitor:cycle", {
+        id: result.watchId,
+        name: result.name,
+        blockNumber: result.snapshot.blockNumber,
+        changed: result.diff?.changed ?? false,
+        changes: result.diff?.changes ?? []
+      });
+      if (result.diff?.changed) {
+        send("monitor:alert", {
+          id: result.watchId,
+          name: result.name,
+          previousBlock: result.diff.previousBlock,
+          currentBlock: result.diff.currentBlock,
+          changes: result.diff.changes
+        });
+      }
+    }
+  } catch (error) {
+    send("monitor:error", {
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+function startProtocolMonitorScheduler() {
+  if (monitorTimer) clearInterval(monitorTimer);
+  void runBackgroundMonitorCycle();
+  monitorTimer = setInterval(() => {
+    void runBackgroundMonitorCycle();
+  }, 60_000);
 }
 
 function registerIpc() {
@@ -1209,6 +1776,20 @@ function registerIpc() {
     return response.canceled ? null : response.filePaths[0] ?? null;
   });
   ipcMain.handle("connections:test", () => testConnections());
+  ipcMain.handle("monitor:list", () => readMonitorRegistry(monitorRegistryPath()));
+  ipcMain.handle("monitor:watch-candidate", (_event: unknown, request: { candidateId?: string; intervalMinutes?: number }) => {
+    if (!request?.candidateId) throw new Error("Candidate id is required.");
+    return watchCandidate(request.candidateId, clampInt(request.intervalMinutes, 15, 5, 1440));
+  });
+  ipcMain.handle("monitor:remove", (_event: unknown, idOrName: string) => {
+    if (typeof idOrName !== "string" || !idOrName.trim()) throw new Error("Monitor watch id is required.");
+    return removeProtocolWatch(monitorRegistryPath(), idOrName.trim());
+  });
+  ipcMain.handle("monitor:run-now", async (_event: unknown, idOrName: string) => {
+    if (typeof idOrName !== "string" || !idOrName.trim()) throw new Error("Monitor watch id is required.");
+    const reader = await configuredMainnetReader();
+    return runProtocolWatch(monitorRegistryPath(), reader, idOrName.trim());
+  });
   ipcMain.handle("analysis:capabilities", () => detectAnalysisCapabilities());
   ipcMain.handle("analysis:choose-project", () => chooseAnalysisPath("directory"));
   ipcMain.handle("analysis:choose-json", () => chooseAnalysisPath("json"));
@@ -1306,6 +1887,7 @@ app.whenReady().then(async () => {
   registerIpc();
   installApplicationMenu();
   createWindow();
+  startProtocolMonitorScheduler();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -1316,5 +1898,9 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  if (monitorTimer) {
+    clearInterval(monitorTimer);
+    monitorTimer = null;
+  }
   if (process.platform !== "darwin") app.quit();
 });

@@ -10,6 +10,12 @@ const TOOLS: ToolDefinition[] = [
   { id: "foundry", executable: "forge", args: ["--version"] },
   { id: "anvil", executable: "anvil", args: ["--version"] },
   { id: "echidna", executable: "echidna", args: ["--version"] },
+  { id: "halmos", executable: "halmos", args: ["--version"] },
+  { id: "kontrol", executable: "kontrol", args: ["--version"] },
+  { id: "certora", executable: "certoraRun", args: ["--version"] },
+  { id: "solc", executable: "solc", args: ["--version"] },
+  { id: "vyper", executable: "vyper", args: ["--version"] },
+  { id: "huffc", executable: "huffc", args: ["--version"] },
   { id: "python", executable: process.platform === "win32" ? "python" : "python3", args: ["--version"] },
   { id: "docker", executable: "docker", args: ["--version"] }
 ];
