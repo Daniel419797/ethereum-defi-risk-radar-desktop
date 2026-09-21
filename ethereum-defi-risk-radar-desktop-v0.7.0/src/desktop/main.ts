@@ -22,6 +22,7 @@ import { simulateEconomicScenario, type EconomicAction, type EconomicState } fro
 import { ECONOMIC_SCENARIO_PACKS } from "../analysis/economic/scenarios.js";
 import { runProtocolScenarios, type ProtocolObservations } from "../analysis/protocol.js";
 import { replayOnPinnedAnvil, type ForkReplaySpec } from "../analysis/reproduction.js";
+import { createReadonlyEthereumRpc } from "../intelligence/rpc.js";
 import { analyzeProjectFromDesktop, replayForkFromDesktop, simulateEconomicFromDesktop, simulateProtocolFromDesktop } from "./analysisLab.js";
 import type { Candidate } from "../types.js";
 
@@ -43,12 +44,14 @@ interface PersistedStore {
   version: number;
   encryptedTinyfishApiKey?: string;
   encryptedEtherscanApiKey?: string;
+  encryptedEthereumRpcUrl?: string;
   preferences?: Partial<Preferences>;
 }
 
 interface PublicSettings extends Preferences {
   hasTinyfishApiKey: boolean;
   hasEtherscanApiKey: boolean;
+  hasEthereumRpcUrl: boolean;
   secureStorageAvailable: boolean;
   firstRun: boolean;
 }
@@ -56,7 +59,9 @@ interface PublicSettings extends Preferences {
 interface SaveSettingsPayload extends Partial<Preferences> {
   tinyfishApiKey?: string;
   etherscanApiKey?: string;
+  ethereumRpcUrl?: string;
   clearEtherscanApiKey?: boolean;
+  clearEthereumRpcUrl?: boolean;
 }
 
 interface ScanRequest {
@@ -205,10 +210,12 @@ async function getPublicSettings(): Promise<PublicSettings> {
   const preferences = normalizePreferences(store.preferences);
   const hasTinyfishApiKey = Boolean(decryptSecret(store.encryptedTinyfishApiKey));
   const hasEtherscanApiKey = Boolean(decryptSecret(store.encryptedEtherscanApiKey));
+  const hasEthereumRpcUrl = Boolean(decryptSecret(store.encryptedEthereumRpcUrl));
   return {
     ...preferences,
     hasTinyfishApiKey,
     hasEtherscanApiKey,
+    hasEthereumRpcUrl,
     secureStorageAvailable: safeStorage.isEncryptionAvailable(),
     firstRun: !hasTinyfishApiKey
   };
@@ -229,6 +236,15 @@ async function saveSettings(payload: SaveSettingsPayload): Promise<PublicSetting
     store.encryptedEtherscanApiKey = encryptSecret(payload.etherscanApiKey.trim());
   }
 
+  if (payload.clearEthereumRpcUrl) {
+    delete store.encryptedEthereumRpcUrl;
+  } else if (payload.ethereumRpcUrl?.trim()) {
+    const rpcUrl = payload.ethereumRpcUrl.trim();
+    // Constructor validation is reused here so insecure/non-HTTP(S) endpoints are never persisted.
+    createReadonlyEthereumRpc(rpcUrl);
+    store.encryptedEthereumRpcUrl = encryptSecret(rpcUrl);
+  }
+
   if (!decryptSecret(store.encryptedTinyfishApiKey)) {
     throw new Error("TinyFish API key is required before scanning.");
   }
@@ -244,7 +260,8 @@ async function runtimeConfig() {
   return {
     preferences: normalizePreferences(store.preferences),
     tinyfishApiKey: decryptSecret(store.encryptedTinyfishApiKey),
-    etherscanApiKey: decryptSecret(store.encryptedEtherscanApiKey)
+    etherscanApiKey: decryptSecret(store.encryptedEtherscanApiKey),
+    ethereumRpcUrl: decryptSecret(store.encryptedEthereumRpcUrl)
   };
 }
 
@@ -298,11 +315,16 @@ async function testConnections() {
   const result: {
     tinyfish: { ok: boolean; message: string };
     etherscan: { ok: boolean | null; message: string };
+    ethereumRpc: { ok: boolean | null; message: string };
   } = {
     tinyfish: { ok: false, message: "Not tested" },
     etherscan: {
       ok: cfg.etherscanApiKey ? false : null,
       message: cfg.etherscanApiKey ? "Not tested" : "Not configured"
+    },
+    ethereumRpc: {
+      ok: cfg.ethereumRpcUrl ? false : null,
+      message: cfg.ethereumRpcUrl ? "Not tested" : "Not configured"
     }
   };
 
@@ -338,6 +360,24 @@ async function testConnections() {
       result.etherscan = { ok: true, message: "Connected to Etherscan API V2" };
     } catch (error) {
       result.etherscan = {
+        ok: false,
+        message: error instanceof Error ? error.message : "Connection failed"
+      };
+    }
+  }
+
+
+  if (cfg.ethereumRpcUrl) {
+    try {
+      const rpc = createReadonlyEthereumRpc(cfg.ethereumRpcUrl, { timeoutMs: 15_000 });
+      const chainId = await rpc<string>("eth_chainId", []);
+      const head = await rpc<string>("eth_blockNumber", []);
+      result.ethereumRpc = {
+        ok: chainId === "0x1" && /^0x[0-9a-fA-F]+$/.test(head),
+        message: chainId === "0x1" ? `Connected to Ethereum Mainnet · head ${head}` : `Unexpected chainId ${chainId}`
+      };
+    } catch (error) {
+      result.ethereumRpc = {
         ok: false,
         message: error instanceof Error ? error.message : "Connection failed"
       };
@@ -386,6 +426,9 @@ async function startScan(request: ScanRequest) {
     const etherscan = cfg.etherscanApiKey
       ? new EtherscanClient(cfg.etherscanApiKey)
       : undefined;
+    const ethereumRpc = cfg.ethereumRpcUrl
+      ? createReadonlyEthereumRpc(cfg.ethereumRpcUrl)
+      : undefined;
 
     const candidates = await scanLegacyEthereumDefi({
       client: tinyfish,
@@ -399,6 +442,8 @@ async function startScan(request: ScanRequest) {
       inspectVerifiedSource: cfg.preferences.inspectVerifiedSource,
       maxSourceBytes: cfg.preferences.maxSourceBytes,
       maxSourceFindings: cfg.preferences.maxSourceFindingsPerContract,
+      ethereumRpc,
+      snapshotConfirmations: 12,
       onProgress: message =>
         send("scan:log", { message, at: new Date().toISOString() }),
       onProgressEvent: event => send("scan:progress", event)
@@ -812,6 +857,8 @@ Commands:
   config set <key> <v>  Update a saved setting (API keys prompt securely)
   config remove etherscan-key
                         Remove the optional Etherscan credential
+  config remove rpc-url
+                        Remove the optional Ethereum Mainnet RPC endpoint
   reports               List recent generated reports
   open-reports          Open the configured reports directory
   install-cli           Install/repair the global risk-radar command
@@ -843,6 +890,7 @@ Project analysis options:
 Configuration keys:
   tinyfish-key          Secure TinyFish API key (interactive prompt)
   etherscan-key         Secure Etherscan API key (interactive prompt)
+  rpc-url                Secure HTTPS Ethereum Mainnet JSON-RPC endpoint
   endpoint              TinyFish Search endpoint
   pages                 Default pages per query
   min-signals           Minimum public signals
@@ -900,6 +948,7 @@ async function cliConfigShow() {
   console.log(JSON.stringify({
     tinyfishApiKey: settings.hasTinyfishApiKey ? "configured" : "missing",
     etherscanApiKey: settings.hasEtherscanApiKey ? "configured" : "not configured",
+    ethereumRpcUrl: settings.hasEthereumRpcUrl ? "configured" : "not configured",
     tinyfishEndpoint: settings.tinyfishEndpoint,
     maxPagesPerQuery: settings.maxPagesPerQuery,
     minPublicSignals: settings.minPublicSignals,
@@ -915,10 +964,18 @@ async function cliConfigShow() {
 async function cliConfigSet(args: string[]) {
   const key = args[0];
   if (!key) throw new Error("Usage: risk-radar config set <key> <value>");
-  if (key === "tinyfish-key" || key === "etherscan-key") {
-    const secret = await promptSecret(key === "tinyfish-key" ? "TinyFish API key" : "Etherscan API key");
-    if (!secret) throw new Error("API key cannot be empty.");
-    await saveSettings(key === "tinyfish-key" ? { tinyfishApiKey: secret } : { etherscanApiKey: secret });
+  if (key === "tinyfish-key" || key === "etherscan-key" || key === "rpc-url") {
+    const label =
+      key === "tinyfish-key" ? "TinyFish API key" :
+      key === "etherscan-key" ? "Etherscan API key" :
+      "Ethereum Mainnet RPC URL";
+    const secret = await promptSecret(label);
+    if (!secret) throw new Error(`${label} cannot be empty.`);
+    const payload =
+      key === "tinyfish-key" ? { tinyfishApiKey: secret } :
+      key === "etherscan-key" ? { etherscanApiKey: secret } :
+      { ethereumRpcUrl: secret };
+    await saveSettings(payload);
     console.log(`${key} saved with OS-backed encryption.`);
     return;
   }
@@ -979,6 +1036,7 @@ async function cliScan(args: string[]) {
 
   const tinyfish = new TinyFishSearchClient({ apiKey: cfg.tinyfishApiKey, endpoint: cfg.preferences.tinyfishEndpoint });
   const etherscan = cfg.etherscanApiKey ? new EtherscanClient(cfg.etherscanApiKey) : undefined;
+  const ethereumRpc = cfg.ethereumRpcUrl ? createReadonlyEthereumRpc(cfg.ethereumRpcUrl) : undefined;
   console.log(`Ethereum DeFi Risk Radar v${app.getVersion()}`);
   console.log(`Ethereum Mainnet (chain 1) · ${startYear}-${endYear}`);
   console.log(`TinyFish pages/query: ${pagesPerQuery} · Etherscan: ${etherscan ? "ON" : "OFF"} · verified-source inspection: ${etherscan && cfg.preferences.inspectVerifiedSource ? "ON" : "OFF"}`);
@@ -995,6 +1053,8 @@ async function cliScan(args: string[]) {
     inspectVerifiedSource: cfg.preferences.inspectVerifiedSource,
     maxSourceBytes: cfg.preferences.maxSourceBytes,
     maxSourceFindings: cfg.preferences.maxSourceFindingsPerContract,
+    ethereumRpc,
+    snapshotConfirmations: 12,
     onProgress: quiet ? undefined : message => console.log(message),
     onProgressEvent: quiet ? event => {
       if (event.overallPercent === 70 || event.overallPercent === 95) console.log(`${event.overallPercent}% · ${event.message}`);
@@ -1035,6 +1095,7 @@ async function cliDoctor() {
     ["Secure storage", settings.secureStorageAvailable ? "available" : "unavailable", settings.secureStorageAvailable],
     ["TinyFish key", settings.hasTinyfishApiKey ? "configured" : "missing", settings.hasTinyfishApiKey],
     ["Etherscan key", settings.hasEtherscanApiKey ? "configured" : "optional / not configured", true],
+    ["Ethereum RPC", settings.hasEthereumRpcUrl ? "configured for pinned state intelligence" : "optional / not configured", true],
     ["Reports directory", outputWritable ? "writable" : "not writable", outputWritable],
     ["Global CLI", cli.installed ? cli.commandPath : "not installed", cli.installed]
   ] as Array<[string, string, boolean]>;
@@ -1157,7 +1218,10 @@ async function runDesktopCli() {
         const result = await testConnections();
         console.log(`TinyFish: ${result.tinyfish.ok ? "CONNECTED" : "FAILED"} · ${result.tinyfish.message}`);
         console.log(`Etherscan: ${result.etherscan.ok === null ? "NOT CONFIGURED" : result.etherscan.ok ? "CONNECTED" : "FAILED"} · ${result.etherscan.message}`);
-        return result.tinyfish.ok && (result.etherscan.ok === null || result.etherscan.ok) ? 0 : 2;
+        console.log(`Ethereum RPC: ${result.ethereumRpc.ok === null ? "NOT CONFIGURED" : result.ethereumRpc.ok ? "CONNECTED" : "FAILED"} · ${result.ethereumRpc.message}`);
+        return result.tinyfish.ok &&
+          (result.etherscan.ok === null || result.etherscan.ok) &&
+          (result.ethereumRpc.ok === null || result.ethereumRpc.ok) ? 0 : 2;
       }
       case "config": {
         const sub = (args.shift() || "show").toLowerCase();
@@ -1168,7 +1232,12 @@ async function runDesktopCli() {
           console.log("Etherscan API key removed.");
           return 0;
         }
-        throw new Error("Usage: risk-radar config show | config set <key> <value> | config remove etherscan-key");
+        if (sub === "remove" && args[0] === "rpc-url") {
+          await saveSettings({ clearEthereumRpcUrl: true });
+          console.log("Ethereum RPC URL removed.");
+          return 0;
+        }
+        throw new Error("Usage: risk-radar config show | config set <key> <value> | config remove etherscan-key | config remove rpc-url");
       }
       case "reports": await cliReports(); return 0;
       case "open-reports": {
