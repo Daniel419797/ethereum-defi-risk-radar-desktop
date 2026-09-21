@@ -8,10 +8,14 @@ export type EtherscanSourceMetadata = {
   compilerVersion?: string;
   proxy: boolean;
   implementationAddress?: string;
+  /** Raw verified source is returned only to the in-process scanner/compiler path and is never copied into Candidate reports. */
+  sourceText?: string;
   sourceSha256?: string;
   optimizationUsed?: boolean;
   optimizationRuns?: number;
   evmVersion?: string;
+  library?: string;
+  constructorArguments?: string;
   sourceInspection?: SourceInspection;
 };
 
@@ -27,6 +31,8 @@ type EtherscanResponse = {
     OptimizationUsed?: string;
     Runs?: string;
     EVMVersion?: string;
+    Library?: string;
+    ConstructorArguments?: string;
   }> | string;
 };
 
@@ -94,10 +100,13 @@ export class EtherscanClient {
       verified,
       contractName: name || undefined,
       compilerVersion: (first.CompilerVersion ?? "").trim() || undefined,
+      sourceText: source || undefined,
       sourceSha256: source ? createHash("sha256").update(source).digest("hex") : undefined,
       optimizationUsed: first.OptimizationUsed === "1" ? true : first.OptimizationUsed === "0" ? false : undefined,
       optimizationRuns: Number.isFinite(runsValue) ? runsValue : undefined,
       evmVersion: (first.EVMVersion ?? "").trim() || undefined,
+      library: (first.Library ?? "").trim() || undefined,
+      constructorArguments: (first.ConstructorArguments ?? "").trim() || undefined,
       proxy,
       implementationAddress:
         EVM_ADDRESS_RE.test(implementation) ? implementation : undefined,
