@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { AnalysisSeverity, EvidenceStrength } from "./analysis/model.js";
 import type { Candidate } from "./types.js";
+import { candidatesToSarif } from "./intelligence/sarif.js";
 
 const EVM_ADDRESS_RE = /0x[a-f0-9]{40}/gi;
 const SOURCE_REVIEW_ONLY_EXCLUSIONS = new Set(["reentrancy_guard_present"]);
@@ -519,6 +520,7 @@ export async function writeReports(opts: {
   const summaryCsvPath = path.join(opts.outputDir, `${base}-summary.csv`);
   const findingsCsvPath = path.join(opts.outputDir, `${base}-findings.csv`);
   const securityReviewPath = path.join(opts.outputDir, `${base}-security-review.html`);
+  const sarifPath = path.join(opts.outputDir, `${base}.sarif`);
 
   const allFindings = safeCandidates.flatMap(flattenSecurityFindings);
   const payload = {
@@ -704,6 +706,7 @@ export async function writeReports(opts: {
   await fs.writeFile(findingsCsvPath, findingRows.join("\n") + "\n", "utf8");
 
   await fs.writeFile(securityReviewPath, securityReviewHtml(safeCandidates, generatedAt, opts.startYear, opts.endYear), "utf8");
+  await fs.writeFile(sarifPath, JSON.stringify(candidatesToSarif(safeCandidates), null, 2), "utf8");
 
-  return { jsonPath, csvPath, summaryCsvPath, findingsCsvPath, securityReviewPath };
+  return { jsonPath, csvPath, summaryCsvPath, findingsCsvPath, securityReviewPath, sarifPath };
 }
