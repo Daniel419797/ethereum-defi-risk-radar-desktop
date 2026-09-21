@@ -317,13 +317,6 @@ export function evaluateMutations(
         sourceFindingKinds.includes(
           "tx_origin"
         )
-      ) ||
-      (
-        item.mutation.kind ===
-          "REMOVE_DEADLINE_CHECK" &&
-        !sourceFindingKinds.includes(
-          "mev_slippage_surface"
-        )
       );
 
     results.push({
