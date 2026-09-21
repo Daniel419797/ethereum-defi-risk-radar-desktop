@@ -1646,7 +1646,12 @@ async function runDesktopCli() {
         const result = await testConnections();
         console.log(`TinyFish: ${result.tinyfish.ok ? "CONNECTED" : "FAILED"} · ${result.tinyfish.message}`);
         console.log(`Etherscan: ${result.etherscan.ok === null ? "NOT CONFIGURED" : result.etherscan.ok ? "CONNECTED" : "FAILED"} · ${result.etherscan.message}`);
-        return result.tinyfish.ok && (result.etherscan.ok === null || result.etherscan.ok) ? 0 : 2;
+        console.log(`Ethereum RPC: ${result.ethereumRpc.ok === null ? "NOT CONFIGURED" : result.ethereumRpc.ok ? "CONNECTED" : "FAILED"} · ${result.ethereumRpc.message}`);
+        return result.tinyfish.ok &&
+          (result.etherscan.ok === null || result.etherscan.ok) &&
+          (result.ethereumRpc.ok === null || result.ethereumRpc.ok)
+          ? 0
+          : 2;
       }
       case "config": {
         const sub = (args.shift() || "show").toLowerCase();
@@ -1657,7 +1662,12 @@ async function runDesktopCli() {
           console.log("Etherscan API key removed.");
           return 0;
         }
-        throw new Error("Usage: risk-radar config show | config set <key> <value> | config remove etherscan-key");
+        if (sub === "remove" && args[0] === "rpc-url") {
+          await saveSettings({ clearEthereumRpcUrl: true });
+          console.log("Ethereum RPC URL removed.");
+          return 0;
+        }
+        throw new Error("Usage: risk-radar config show | config set <key> <value> | config remove etherscan-key|rpc-url");
       }
       case "reports": await cliReports(); return 0;
       case "open-reports": {
@@ -1676,6 +1686,10 @@ async function runDesktopCli() {
       case "simulate-economic": return await cliSimulateEconomic(args);
       case "simulate-protocol": return await cliSimulateProtocol(args);
       case "replay-fork": return await cliReplayFork(args);
+      case "snapshot-state": return await cliSnapshotState(args);
+      case "upgrade-diff": return await cliUpgradeDiff(args);
+      case "monitor": return await cliMonitor(args);
+      case "benchmark": return await cliBenchmark(args);
       default: throw new Error(`Unknown command: ${command}. Run risk-radar help.`);
     }
   } catch (error) {
