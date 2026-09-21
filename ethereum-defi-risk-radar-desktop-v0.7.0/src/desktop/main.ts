@@ -24,8 +24,35 @@ import { runProtocolScenarios, type ProtocolObservations } from "../analysis/pro
 import { replayOnPinnedAnvil, type ForkReplaySpec } from "../analysis/reproduction.js";
 import { analyzeProjectFromDesktop, replayForkFromDesktop, simulateEconomicFromDesktop, simulateProtocolFromDesktop } from "./analysisLab.js";
 import type { Candidate } from "../types.js";
+import { ReadOnlyEthereumRpcClient } from "../intelligence/rpc.js";
+import { capturePinnedStateSnapshot } from "../intelligence/snapshot.js";
+import { compareProtocolUpgrade } from "../intelligence/upgrade.js";
+import {
+  BENCHMARK_CORPUS_COMMITS,
+  benchmarkMarkdown,
+  evaluateBenchmark,
+  loadCveSmartContracts,
+  loadDefiHackLabs,
+  loadSmartBugsCurated
+} from "../intelligence/benchmark.js";
+import {
+  runDefiHackLabsReproductionBenchmark,
+  runSourceBenchmark
+} from "../intelligence/benchmarkRunner.js";
+import {
+  readMonitorRegistry,
+  removeProtocolWatch,
+  runDueProtocolWatches,
+  runProtocolWatch,
+  upsertProtocolWatch
+} from "../intelligence/monitorStore.js";
+import type {
+  BenchmarkCase,
+  BenchmarkPrediction,
+  PinnedStateSnapshot
+} from "../intelligence/model.js";
 
-const STORE_VERSION = 1;
+const STORE_VERSION = 2;
 const execFileAsync = promisify(execFile);
 
 interface Preferences {
@@ -43,12 +70,14 @@ interface PersistedStore {
   version: number;
   encryptedTinyfishApiKey?: string;
   encryptedEtherscanApiKey?: string;
+  encryptedEthereumRpcUrl?: string;
   preferences?: Partial<Preferences>;
 }
 
 interface PublicSettings extends Preferences {
   hasTinyfishApiKey: boolean;
   hasEtherscanApiKey: boolean;
+  hasEthereumRpcUrl: boolean;
   secureStorageAvailable: boolean;
   firstRun: boolean;
 }
@@ -56,7 +85,9 @@ interface PublicSettings extends Preferences {
 interface SaveSettingsPayload extends Partial<Preferences> {
   tinyfishApiKey?: string;
   etherscanApiKey?: string;
+  ethereumRpcUrl?: string;
   clearEtherscanApiKey?: boolean;
+  clearEthereumRpcUrl?: boolean;
 }
 
 interface ScanRequest {
@@ -80,6 +111,7 @@ let mainWindow: BrowserWindow | null = null;
 let scanRunning = false;
 let lastScan: ScanResult | null = null;
 let analysisController: AbortController | null = null;
+let monitorTimer: NodeJS.Timeout | null = null;
 const authorizedAnalysisPaths = new Set<string>();
 
 function clampInt(value: unknown, fallback: number, min: number, max: number) {
@@ -90,6 +122,14 @@ function clampInt(value: unknown, fallback: number, min: number, max: number) {
 
 function defaultOutputDir() {
   return path.join(app.getPath("documents"), "Ethereum DeFi Risk Radar", "reports");
+}
+
+function monitorRegistryPath() {
+  return path.join(app.getPath("userData"), "protocol-monitors.json");
+}
+
+function benchmarkOutputDir() {
+  return path.join(app.getPath("documents"), "Ethereum DeFi Risk Radar", "benchmarks");
 }
 
 function defaultPreferences(): Preferences {
@@ -205,10 +245,12 @@ async function getPublicSettings(): Promise<PublicSettings> {
   const preferences = normalizePreferences(store.preferences);
   const hasTinyfishApiKey = Boolean(decryptSecret(store.encryptedTinyfishApiKey));
   const hasEtherscanApiKey = Boolean(decryptSecret(store.encryptedEtherscanApiKey));
+  const hasEthereumRpcUrl = Boolean(decryptSecret(store.encryptedEthereumRpcUrl));
   return {
     ...preferences,
     hasTinyfishApiKey,
     hasEtherscanApiKey,
+    hasEthereumRpcUrl,
     secureStorageAvailable: safeStorage.isEncryptionAvailable(),
     firstRun: !hasTinyfishApiKey
   };
@@ -229,6 +271,14 @@ async function saveSettings(payload: SaveSettingsPayload): Promise<PublicSetting
     store.encryptedEtherscanApiKey = encryptSecret(payload.etherscanApiKey.trim());
   }
 
+  if (payload.clearEthereumRpcUrl) {
+    delete store.encryptedEthereumRpcUrl;
+  } else if (payload.ethereumRpcUrl?.trim()) {
+    const rpcUrl = payload.ethereumRpcUrl.trim();
+    new ReadOnlyEthereumRpcClient(rpcUrl);
+    store.encryptedEthereumRpcUrl = encryptSecret(rpcUrl);
+  }
+
   if (!decryptSecret(store.encryptedTinyfishApiKey)) {
     throw new Error("TinyFish API key is required before scanning.");
   }
@@ -244,7 +294,8 @@ async function runtimeConfig() {
   return {
     preferences: normalizePreferences(store.preferences),
     tinyfishApiKey: decryptSecret(store.encryptedTinyfishApiKey),
-    etherscanApiKey: decryptSecret(store.encryptedEtherscanApiKey)
+    etherscanApiKey: decryptSecret(store.encryptedEtherscanApiKey),
+    ethereumRpcUrl: decryptSecret(store.encryptedEthereumRpcUrl)
   };
 }
 
