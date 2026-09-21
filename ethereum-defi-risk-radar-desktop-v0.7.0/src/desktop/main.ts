@@ -1698,6 +1698,69 @@ async function runDesktopCli() {
   }
 }
 
+
+async function watchCandidate(candidateId: string, intervalMinutes = 15) {
+  const candidate = lastScan?.candidates.find(item => item.id === candidateId);
+  if (!candidate) {
+    throw new Error("Candidate is not available in the current completed scan.");
+  }
+  const targets = candidate.ethereum.sourceInspections
+    .filter(inspection => Boolean(inspection.address))
+    .map(inspection => ({
+      address: inspection.address!,
+      contractRefId: inspection.contractRefId
+    }));
+  if (!targets.length) {
+    throw new Error("Candidate has no resolved contract targets to monitor.");
+  }
+  return upsertProtocolWatch(monitorRegistryPath(), {
+    name: candidate.label,
+    intervalMinutes,
+    targets
+  });
+}
+
+async function runBackgroundMonitorCycle() {
+  try {
+    const cfg = await runtimeConfig();
+    if (!cfg.ethereumRpcUrl) return;
+    const registry = await readMonitorRegistry(monitorRegistryPath());
+    if (!registry.watches.length) return;
+    const reader = new ReadOnlyEthereumRpcClient(cfg.ethereumRpcUrl);
+    const results = await runDueProtocolWatches(monitorRegistryPath(), reader);
+    for (const result of results) {
+      send("monitor:cycle", {
+        id: result.watchId,
+        name: result.name,
+        blockNumber: result.snapshot.blockNumber,
+        changed: result.diff?.changed ?? false,
+        changes: result.diff?.changes ?? []
+      });
+      if (result.diff?.changed) {
+        send("monitor:alert", {
+          id: result.watchId,
+          name: result.name,
+          previousBlock: result.diff.previousBlock,
+          currentBlock: result.diff.currentBlock,
+          changes: result.diff.changes
+        });
+      }
+    }
+  } catch (error) {
+    send("monitor:error", {
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+function startProtocolMonitorScheduler() {
+  if (monitorTimer) clearInterval(monitorTimer);
+  void runBackgroundMonitorCycle();
+  monitorTimer = setInterval(() => {
+    void runBackgroundMonitorCycle();
+  }, 60_000);
+}
+
 function registerIpc() {
   ipcMain.handle("app:get-info", () => appInfo());
   ipcMain.handle("settings:get", () => getPublicSettings());
@@ -1712,6 +1775,20 @@ function registerIpc() {
     return response.canceled ? null : response.filePaths[0] ?? null;
   });
   ipcMain.handle("connections:test", () => testConnections());
+  ipcMain.handle("monitor:list", () => readMonitorRegistry(monitorRegistryPath()));
+  ipcMain.handle("monitor:watch-candidate", (_event: unknown, request: { candidateId?: string; intervalMinutes?: number }) => {
+    if (!request?.candidateId) throw new Error("Candidate id is required.");
+    return watchCandidate(request.candidateId, clampInt(request.intervalMinutes, 15, 5, 1440));
+  });
+  ipcMain.handle("monitor:remove", (_event: unknown, idOrName: string) => {
+    if (typeof idOrName !== "string" || !idOrName.trim()) throw new Error("Monitor watch id is required.");
+    return removeProtocolWatch(monitorRegistryPath(), idOrName.trim());
+  });
+  ipcMain.handle("monitor:run-now", async (_event: unknown, idOrName: string) => {
+    if (typeof idOrName !== "string" || !idOrName.trim()) throw new Error("Monitor watch id is required.");
+    const reader = await configuredMainnetReader();
+    return runProtocolWatch(monitorRegistryPath(), reader, idOrName.trim());
+  });
   ipcMain.handle("analysis:capabilities", () => detectAnalysisCapabilities());
   ipcMain.handle("analysis:choose-project", () => chooseAnalysisPath("directory"));
   ipcMain.handle("analysis:choose-json", () => chooseAnalysisPath("json"));
@@ -1809,6 +1886,7 @@ app.whenReady().then(async () => {
   registerIpc();
   installApplicationMenu();
   createWindow();
+  startProtocolMonitorScheduler();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -1819,5 +1897,9 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  if (monitorTimer) {
+    clearInterval(monitorTimer);
+    monitorTimer = null;
+  }
   if (process.platform !== "darwin") app.quit();
 });
