@@ -31,7 +31,7 @@
     currentScreen: "dashboard",
     onboarding: false,
     onboardingStep: 1,
-    draftKeys: { tinyfishApiKey: "", etherscanApiKey: "" },
+    draftKeys: { tinyfishApiKey: "", etherscanApiKey: "", ethereumRpcUrl: "" },
     candidates: [],
     reportPaths: null,
     lastScan: null,
@@ -42,7 +42,7 @@
     selectedCandidate: null,
     selectedCandidateTab: "overview",
     keyModalProvider: null,
-    connection: { tinyfish: "unknown", etherscan: "unknown" },
+    connection: { tinyfish: "unknown", etherscan: "unknown", rpc: "unknown" },
     analysisCapabilities: [],
     analysisRunning: false,
     analysisResult: null,
@@ -368,6 +368,7 @@
     return {
       tinyfishApiKey: state.draftKeys.tinyfishApiKey,
       etherscanApiKey: state.draftKeys.etherscanApiKey || undefined,
+      ethereumRpcUrl: state.draftKeys.ethereumRpcUrl || undefined,
       tinyfishEndpoint: $("setup-endpoint").value.trim(),
       maxPagesPerQuery: clamp($("setup-pages").value, 1, 10, 1),
       minPublicSignals: clamp($("setup-min-signals").value, 2, 8, 2),
@@ -389,6 +390,12 @@
     }
     if (!state.settings.hasEtherscanApiKey && state.connection.etherscan !== "testing") {
       state.connection.etherscan = "optional";
+    }
+    if (state.connection.rpc === "unknown") {
+      state.connection.rpc = state.settings.hasEthereumRpcUrl ? "configured" : "optional";
+    }
+    if (!state.settings.hasEthereumRpcUrl && state.connection.rpc !== "testing") {
+      state.connection.rpc = "optional";
     }
     updateConnectionUI();
   }
@@ -418,21 +425,28 @@
   function updateConnectionUI() {
     const tf = state.connection.tinyfish;
     const es = state.connection.etherscan;
+    const rpc = state.connection.rpc;
 
     $("dashboard-tinyfish-status").textContent = providerStatusText(tf);
     $("dashboard-etherscan-status").textContent = providerStatusText(es);
+    $("dashboard-rpc-status").textContent = providerStatusText(rpc);
     $("dashboard-tinyfish-status").className = providerStatusClass(tf);
     $("dashboard-etherscan-status").className = providerStatusClass(es);
+    $("dashboard-rpc-status").className = providerStatusClass(rpc);
     $("dashboard-tinyfish-check").className = `status-check ${providerStatusClass(tf)}`;
     $("dashboard-etherscan-check").className = `status-check ${providerStatusClass(es)}`;
+    $("dashboard-rpc-check").className = `status-check ${providerStatusClass(rpc)}`;
     $("dashboard-tinyfish-check").textContent = tf === "connected" ? "✓" : tf === "failed" ? "×" : "•";
     $("dashboard-etherscan-check").textContent = es === "connected" ? "✓" : es === "failed" ? "×" : "•";
+    $("dashboard-rpc-check").textContent = rpc === "connected" ? "✓" : rpc === "failed" ? "×" : "•";
 
     if (state.settings) {
       $("settings-tinyfish-badge").textContent = providerStatusText(tf);
       $("settings-tinyfish-badge").className = `connected-badge ${tf === "failed" ? "bad" : tf === "connected" ? "" : "neutral"}`.trim();
       $("settings-etherscan-badge").textContent = providerStatusText(es);
       $("settings-etherscan-badge").className = `connected-badge ${es === "failed" ? "bad" : es === "connected" ? "" : "neutral"}`.trim();
+      $("settings-rpc-badge").textContent = providerStatusText(rpc);
+      $("settings-rpc-badge").className = `connected-badge ${rpc === "failed" ? "bad" : rpc === "connected" ? "" : "neutral"}`.trim();
     }
   }
 
@@ -452,15 +466,21 @@
 
     setProviderStatus("tinyfish", "testing");
     setProviderStatus("etherscan", state.settings.hasEtherscanApiKey ? "testing" : "optional");
+    setProviderStatus("rpc", state.settings.hasEthereumRpcUrl ? "testing" : "optional");
 
     $("connection-modal-subtitle").textContent = "Testing all configured connections...";
     $("connection-tinyfish-result").className = "test-result pending";
     $("connection-tinyfish-result").textContent = "Testing…";
     $("connection-tinyfish-message").textContent = "Waiting for response";
     $("connection-tinyfish-endpoint").textContent = state.settings.tinyfishEndpoint;
+
     $("connection-etherscan-result").className = state.settings.hasEtherscanApiKey ? "test-result pending" : "test-result neutral";
     $("connection-etherscan-result").textContent = state.settings.hasEtherscanApiKey ? "Testing…" : "Not configured";
-    $("connection-etherscan-message").textContent = state.settings.hasEtherscanApiKey ? "Waiting for response" : "Optional enrichment disabled";
+    $("connection-etherscan-message").textContent = state.settings.hasEtherscanApiKey ? "Waiting for response" : "Optional verified-source enrichment disabled";
+
+    $("connection-rpc-result").className = state.settings.hasEthereumRpcUrl ? "test-result pending" : "test-result neutral";
+    $("connection-rpc-result").textContent = state.settings.hasEthereumRpcUrl ? "Testing…" : "Not configured";
+    $("connection-rpc-message").textContent = state.settings.hasEthereumRpcUrl ? "Waiting for response" : "Pinned-state intelligence disabled";
     if (open) openModal("connection-modal");
 
     try {
@@ -475,14 +495,23 @@
         setProviderStatus("etherscan", "optional");
         $("connection-etherscan-result").className = "test-result neutral";
         $("connection-etherscan-result").textContent = "Not configured";
-        $("connection-etherscan-message").textContent = result.etherscan.message;
       } else {
-        const esStatus = result.etherscan.ok ? "connected" : "failed";
-        setProviderStatus("etherscan", esStatus);
+        setProviderStatus("etherscan", result.etherscan.ok ? "connected" : "failed");
         $("connection-etherscan-result").className = `test-result ${result.etherscan.ok ? "good" : "bad"}`;
         $("connection-etherscan-result").textContent = result.etherscan.ok ? "Connected" : "Failed";
-        $("connection-etherscan-message").textContent = result.etherscan.message;
       }
+      $("connection-etherscan-message").textContent = result.etherscan.message;
+
+      if (result.ethereumRpc.ok === null) {
+        setProviderStatus("rpc", "optional");
+        $("connection-rpc-result").className = "test-result neutral";
+        $("connection-rpc-result").textContent = "Not configured";
+      } else {
+        setProviderStatus("rpc", result.ethereumRpc.ok ? "connected" : "failed");
+        $("connection-rpc-result").className = `test-result ${result.ethereumRpc.ok ? "good" : "bad"}`;
+        $("connection-rpc-result").textContent = result.ethereumRpc.ok ? "Connected" : "Failed";
+      }
+      $("connection-rpc-message").textContent = result.ethereumRpc.message;
       $("connection-modal-subtitle").textContent = "Connection test complete.";
     } catch (error) {
       setProviderStatus("tinyfish", "failed");
@@ -699,6 +728,7 @@
     $("candidate-host-link").disabled = !(candidate.evidence || []).some(e => e.sourceUrl);
     const findings = flattenFindings(candidate);
     $("candidate-findings-count").textContent = String(findings.length);
+    $("candidate-intelligence-count").textContent = String(candidate.intelligence?.attackPaths?.length || 0);
     $("candidate-evidence-count").textContent = String((candidate.evidence || []).length);
   }
 
@@ -733,6 +763,235 @@
       : "The protocol has public signals, but they currently fall below the higher research-priority thresholds.";
   $("candidate-interpretation").textContent = description;
 }
+
+  function attestationTone(status) {
+    if (status === "EXACT") return "good";
+    if (status === "METADATA_ONLY_DIFFERENCE" || status === "EXPLORER_VERIFIED_RUNTIME_OBSERVED") return "review";
+    if (status === "MISMATCH" || status === "NO_CODE") return "bad";
+    return "neutral";
+  }
+
+  function createIntelligenceEmpty(title, detail) {
+    const empty = element("div", "intelligence-empty");
+    empty.append(element("strong", "", title), element("span", "", detail));
+    return empty;
+  }
+
+  function renderKnowledgeGraph(intelligence) {
+    const graph = intelligence?.graph;
+    const hash = $("candidate-graph-hash");
+    const nodesRoot = $("candidate-graph-nodes");
+    const edgesRoot = $("candidate-graph-edges");
+    nodesRoot.replaceChildren();
+    edgesRoot.replaceChildren();
+
+    if (!graph) {
+      hash.textContent = "NO GRAPH";
+      nodesRoot.append(createIntelligenceEmpty("No protocol graph", "Verified-source graph construction did not produce a graph for this result."));
+      return;
+    }
+
+    hash.textContent = graph.graphHash ? graph.graphHash.slice(0, 12) : "GRAPH";
+    const counts = new Map();
+    for (const graphNode of graph.nodes || []) counts.set(graphNode.kind, (counts.get(graphNode.kind) || 0) + 1);
+    for (const [kind, count] of [...counts.entries()].sort((a, b) => b[1] - a[1])) {
+      const card = element("div", "graph-kind-card");
+      card.append(element("span", "graph-kind-icon", kind === "proxy" ? "⇄" : kind === "implementation" ? "◇" : kind === "finding" ? "!" : "●"));
+      const copy = element("div");
+      copy.append(element("small", "", humanize(kind)), element("strong", "", count));
+      card.append(copy);
+      nodesRoot.append(card);
+    }
+
+    const edgeRows = (graph.edges || [])
+      .filter(edge => ["IMPLEMENTS", "DELEGATECALLS", "CALLS", "READS_PRICE_FROM", "CONTROLS", "UPGRADES", "USES_ASSET"].includes(edge.kind))
+      .slice(0, 32);
+    if (!edgeRows.length) {
+      edgesRoot.append(createIntelligenceEmpty("No high-value relationships", "The graph exists, but no prioritized relationship edges were emitted."));
+      return;
+    }
+    for (const graphEdge of edgeRows) {
+      const row = element("div", "graph-edge-row");
+      row.append(
+        element("code", "", graphEdge.from),
+        element("span", "graph-edge-kind", humanize(graphEdge.kind)),
+        element("code", "", graphEdge.to),
+        element("span", `confidence-dot ${String(graphEdge.confidence || "LOW").toLowerCase()}`, graphEdge.confidence || "LOW")
+      );
+      edgesRoot.append(row);
+    }
+  }
+
+  function renderAttestations(intelligence) {
+    const root = $("candidate-attestations");
+    root.replaceChildren();
+    const rows = intelligence?.attestations || [];
+    if (!rows.length) {
+      root.append(createIntelligenceEmpty(
+        "No pinned runtime attestation",
+        state.settings?.hasEthereumRpcUrl
+          ? "No attestation artifact was produced for this candidate."
+          : "Configure a read-only Ethereum Mainnet RPC URL to observe deployed runtime at a pinned block."
+      ));
+      return;
+    }
+    for (const item of rows) {
+      const card = element("article", "attestation-card");
+      const header = element("div", "attestation-header");
+      const copy = element("div");
+      copy.append(
+        element("strong", "", item.contractRefId),
+        element("small", "", `${humanize(item.sourceRole || "direct")} · block ${item.blockNumber}`)
+      );
+      header.append(copy, element("span", `attestation-status ${attestationTone(item.status)}`, humanize(item.status)));
+      card.append(header);
+      const facts = element("div", "attestation-facts");
+      facts.append(
+        summaryItem("Runtime bytes", item.observedRuntimeBytes ?? 0),
+        summaryItem("Explorer verified", item.explorerVerified ? "Yes" : "No"),
+        summaryItem("Local compile", item.locallyCompiled ? "Yes" : "No"),
+        summaryItem("Metadata-only match", item.metadataStrippedMatch ? "Yes" : "No")
+      );
+      card.append(facts);
+      if (item.limitations?.length) appendFindingDetails(card, "Attestation limitations", item.limitations);
+      root.append(card);
+    }
+  }
+
+  function renderInvariants(intelligence) {
+    const root = $("candidate-invariants");
+    root.replaceChildren();
+    const applicable = (intelligence?.invariants || []).filter(item => item.state === "APPLICABLE");
+    if (!applicable.length) {
+      root.append(createIntelligenceEmpty("No invariant pack selected", "The current source/graph model did not confidently match a protocol-aware invariant."));
+      return;
+    }
+    for (const item of applicable) {
+      const card = element("article", "invariant-card");
+      const title = element("div", "invariant-title");
+      title.append(element("strong", "", item.invariantId), element("span", `confidence-dot ${String(item.confidence).toLowerCase()}`, item.confidence));
+      card.append(title);
+      if (item.reasons?.length) {
+        const list = element("ul", "invariant-reasons");
+        for (const reason of item.reasons) list.append(element("li", "", reason));
+        card.append(list);
+      }
+      card.append(element("small", "", `${item.contractRefIds?.length || 0} contract reference(s) in scope`));
+      root.append(card);
+    }
+  }
+
+  function renderEscalation(intelligence) {
+    const root = $("candidate-escalation");
+    root.replaceChildren();
+    const plans = (intelligence?.escalationPlans || []).filter(plan => plan.steps?.length).slice(0, 48);
+    if (!plans.length) {
+      root.append(createIntelligenceEmpty("No pending escalation", "No current finding has a stronger evidence step that can be planned automatically."));
+      return;
+    }
+    for (const plan of plans) {
+      const card = element("article", "escalation-card");
+      const header = element("div", "escalation-header");
+      header.append(
+        element("code", "", plan.findingId),
+        element("span", "evidence-pill", humanize(plan.strongestEvidence))
+      );
+      card.append(header);
+      const invariantLine = element("small", "escalation-invariants", plan.invariantIds?.length ? `Invariant: ${plan.invariantIds.join(", ")}` : "Generic evidence escalation");
+      card.append(invariantLine);
+      const flow = element("div", "escalation-flow");
+      for (const step of plan.steps) {
+        const stepNode = element("div", "escalation-step");
+        stepNode.append(
+          element("span", "step-order", step.order),
+          element("strong", "", humanize(step.stage)),
+          element("small", "", step.description)
+        );
+        const flags = element("div", "step-flags");
+        if (step.engine) flags.append(element("span", "", humanize(step.engine)));
+        if (step.requiresRpc) flags.append(element("span", "", "RPC"));
+        if (step.requiresTrust) flags.append(element("span", "", "Explicit trust"));
+        flags.append(element("span", "", `→ ${humanize(step.successEvidence)}`));
+        stepNode.append(flags);
+        flow.append(stepNode);
+      }
+      card.append(flow);
+      root.append(card);
+    }
+  }
+
+  function renderAttackPaths(intelligence) {
+    const root = $("candidate-attack-paths");
+    root.replaceChildren();
+    const paths = intelligence?.attackPaths || [];
+    if (!paths.length) {
+      root.append(createIntelligenceEmpty("No prioritized attack path", "Attack paths are created for critical/high or execution-backed findings. This is not a clean-pass assertion."));
+      return;
+    }
+    for (const pathItem of paths) {
+      const card = element("article", "attack-path-card");
+      const header = element("div", "attack-path-header");
+      const title = element("div");
+      title.append(element("strong", "", pathItem.title), element("small", "", pathItem.findingId));
+      const badges = element("div", "attack-path-badges");
+      badges.append(
+        element("span", `severity-mini ${String(pathItem.severity).toLowerCase()}`, pathItem.severity),
+        element("span", "evidence-pill", humanize(pathItem.evidenceStrength)),
+        element("span", "verdict-pill", humanize(pathItem.exploitabilityVerdict || "unknown"))
+      );
+      header.append(title, badges);
+      card.append(header);
+
+      const flow = element("div", "attack-path-flow");
+      (pathItem.steps || []).forEach((step, index) => {
+        const node = element("div", `attack-step attack-step-${String(step.kind).toLowerCase()}`);
+        const glyph = step.kind === "ENTRY" ? "↳" : step.kind === "ORACLE" ? "◎" : step.kind === "PRIVILEGE" ? "◇" : step.kind === "IMPACT" ? "!" : "●";
+        const copy = element("div", "attack-step-copy");
+        copy.append(
+          element("small", "", humanize(step.kind)),
+          element("strong", "", step.label),
+          element("span", "", step.evidence)
+        );
+        if (step.location) copy.append(element("code", "", `${step.location.file}:${step.location.line}`));
+        node.append(element("span", "attack-step-glyph", glyph), copy);
+        flow.append(node);
+        if (index < pathItem.steps.length - 1) flow.append(element("div", "attack-connector", "↓"));
+      });
+      card.append(flow);
+      root.append(card);
+    }
+  }
+
+  function renderProtocolIntelligence(candidate) {
+    const intelligence = candidate.intelligence;
+    const summary = $("candidate-intelligence-summary");
+    summary.replaceChildren();
+    const graph = intelligence?.graph;
+    const snapshot = intelligence?.snapshot;
+    const exact = (intelligence?.attestations || []).filter(item => item.status === "EXACT").length;
+    const applicable = (intelligence?.invariants || []).filter(item => item.state === "APPLICABLE").length;
+    summary.append(
+      createCompactStat("◫", "Graph Nodes", graph?.nodes?.length || 0),
+      createCompactStat("⇢", "Graph Edges", graph?.edges?.length || 0),
+      createCompactStat("✓", "Exact Attestations", exact),
+      createCompactStat("▣", "Pinned Block", snapshot?.blockNumber || "No RPC"),
+      createCompactStat("≡", "Invariants", applicable),
+      createCompactStat("↯", "Attack Paths", intelligence?.attackPaths?.length || 0)
+    );
+
+    const provenance = $("candidate-intelligence-provenance");
+    if (snapshot) {
+      provenance.textContent = `Pinned Ethereum Mainnet state: block ${snapshot.blockNumber} · hash ${snapshot.blockHash} · ${snapshot.confirmationsFromHead} confirmation(s) behind observed head · snapshot ${snapshot.snapshotHash.slice(0, 16)}. Graph ${graph?.graphHash?.slice(0, 16) || "n/a"}.`;
+    } else {
+      provenance.textContent = `Knowledge graph and invariants are derived from verified source. No pinned RPC snapshot is attached, so deployed-state/bytecode claims are not being made for this candidate. Graph ${graph?.graphHash?.slice(0, 16) || "n/a"}.`;
+    }
+
+    renderKnowledgeGraph(intelligence);
+    renderAttestations(intelligence);
+    renderInvariants(intelligence);
+    renderEscalation(intelligence);
+    renderAttackPaths(intelligence);
+  }
 
     function renderSeverityMetrics(findings) {
   const severity = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
@@ -1074,8 +1333,10 @@
     document.querySelectorAll(".candidate-tab").forEach(button => button.classList.toggle("active", button.dataset.candidateTab === tab));
     $("candidate-tab-overview").classList.toggle("hidden", tab !== "overview");
     $("candidate-tab-findings").classList.toggle("hidden", tab !== "findings");
+    $("candidate-tab-intelligence").classList.toggle("hidden", tab !== "intelligence");
     $("candidate-tab-evidence").classList.toggle("hidden", tab !== "evidence");
     if (tab === "findings" && state.selectedCandidate) renderCandidateFindings(state.selectedCandidate);
+    if (tab === "intelligence" && state.selectedCandidate) renderProtocolIntelligence(state.selectedCandidate);
     if (tab === "evidence" && state.selectedCandidate) renderCandidateEvidence(state.selectedCandidate);
   }
 
@@ -1088,6 +1349,7 @@
     renderCandidateHeader(candidate);
     renderCandidateOverview(candidate);
     renderCandidateFindings(candidate);
+    renderProtocolIntelligence(candidate);
     renderCandidateEvidence(candidate);
     switchCandidateTab(state.selectedCandidateTab);
   }
@@ -1230,6 +1492,7 @@
     $("settings-max-findings").value = String(s.maxSourceFindingsPerContract);
     $("settings-output-dir").value = s.outputDir;
     $("settings-remove-etherscan").classList.toggle("hidden", !s.hasEtherscanApiKey);
+    $("settings-remove-rpc").classList.toggle("hidden", !s.hasEthereumRpcUrl);
     updateConnectionUI();
     renderCliStatus();
     renderAnalysisCapabilities();
@@ -1270,32 +1533,46 @@
 
   function openKeyModal(provider) {
     state.keyModalProvider = provider;
-    const name = provider === "tinyfish" ? "TinyFish" : "Etherscan";
-    $("key-modal-title").textContent = `Replace ${name} API Key`;
-    $("key-modal-description").textContent = provider === "tinyfish"
-      ? "Enter a new TinyFish key. The existing encrypted key will be replaced after you save."
-      : "Enter a new Etherscan key. The existing encrypted key will be replaced after you save.";
-    $("key-modal-label").textContent = `${name} API Key`;
+    const isRpc = provider === "rpc";
+    const name = provider === "tinyfish" ? "TinyFish" : provider === "etherscan" ? "Etherscan" : "Ethereum Mainnet RPC";
+    $("key-modal-title").textContent = isRpc ? "Configure Ethereum Mainnet RPC" : `Replace ${name} API Key`;
+    $("key-modal-description").textContent = isRpc
+      ? "Enter an HTTPS Ethereum Mainnet JSON-RPC URL. It is encrypted with OS-backed secure storage and only an allowlist of read-only methods can be called."
+      : provider === "tinyfish"
+        ? "Enter a new TinyFish key. The existing encrypted key will be replaced after you save."
+        : "Enter a new Etherscan key. The existing encrypted key will be replaced after you save.";
+    $("key-modal-label").textContent = isRpc ? "Ethereum Mainnet RPC URL" : `${name} API Key`;
     $("key-modal-input").value = "";
+    $("key-modal-input").placeholder = isRpc ? "https://your-mainnet-rpc.example" : "";
     $("key-modal-error").classList.add("hidden");
+    $("key-modal-save").textContent = isRpc ? "Save RPC" : "Save API Key";
     openModal("key-modal");
     setTimeout(() => $("key-modal-input").focus(), 60);
   }
 
   async function saveReplacementKey(event) {
     event.preventDefault();
-    const key = $("key-modal-input").value.trim();
-    if (!key) return;
+    const value = $("key-modal-input").value.trim();
+    if (!value) return;
     $("key-modal-save").disabled = true;
     $("key-modal-error").classList.add("hidden");
     try {
-      const payload = state.keyModalProvider === "tinyfish" ? { tinyfishApiKey: key } : { etherscanApiKey: key };
+      const provider = state.keyModalProvider;
+      const payload =
+        provider === "tinyfish" ? { tinyfishApiKey: value } :
+        provider === "etherscan" ? { etherscanApiKey: value } :
+        { ethereumRpcUrl: value };
       state.settings = await api.saveSettings(payload);
-      state.connection[state.keyModalProvider] = "configured";
+      state.connection[provider] = "configured";
       renderSettings();
       updateConnectionUI();
       closeModal("key-modal");
-      showToast(`${state.keyModalProvider === "tinyfish" ? "TinyFish" : "Etherscan"} API key replaced securely.`, "success");
+      showToast(
+        provider === "rpc"
+          ? "Ethereum Mainnet RPC endpoint stored securely."
+          : `${provider === "tinyfish" ? "TinyFish" : "Etherscan"} API key replaced securely.`,
+        "success"
+      );
     } catch (error) {
       $("key-modal-error").textContent = error?.message || String(error);
       $("key-modal-error").classList.remove("hidden");
@@ -1317,6 +1594,21 @@
       showToast(error?.message || String(error), "error");
     } finally {
       $("confirm-remove-etherscan").disabled = false;
+    }
+  }
+
+  async function removeRpcUrl() {
+    $("settings-remove-rpc").disabled = true;
+    try {
+      state.settings = await api.saveSettings({ clearEthereumRpcUrl: true });
+      state.connection.rpc = "optional";
+      renderSettings();
+      updateConnectionUI();
+      showToast("Ethereum RPC endpoint removed. Source-only intelligence remains enabled.", "success");
+    } catch (error) {
+      showToast(error?.message || String(error), "error");
+    } finally {
+      $("settings-remove-rpc").disabled = false;
     }
   }
 
@@ -1425,6 +1717,7 @@
       }
       state.draftKeys.tinyfishApiKey = tinyfish;
       state.draftKeys.etherscanApiKey = $("setup-etherscan-key").value.trim();
+      state.draftKeys.ethereumRpcUrl = $("setup-rpc-url").value.trim();
       showOnboardingStep(2);
     });
 
@@ -1447,6 +1740,7 @@
         }
         state.connection.tinyfish = "configured";
         state.connection.etherscan = state.settings.hasEtherscanApiKey ? "configured" : "optional";
+        state.connection.rpc = state.settings.hasEthereumRpcUrl ? "configured" : "optional";
         setOnboarding(false);
         $("dashboard-start-year").value = "2016";
         $("dashboard-end-year").value = String(currentYear);
@@ -1485,6 +1779,7 @@
     $("results-show-summary-csv").addEventListener("click", () => state.reportPaths?.summaryCsvPath && api.showReport(state.reportPaths.summaryCsvPath));
     $("results-show-findings-csv").addEventListener("click", () => state.reportPaths?.findingsCsvPath && api.showReport(state.reportPaths.findingsCsvPath));
     $("results-show-security-html").addEventListener("click", () => state.reportPaths?.securityReviewPath && api.showReport(state.reportPaths.securityReviewPath));
+    $("results-show-sarif").addEventListener("click", () => state.reportPaths?.sarifPath && api.showReport(state.reportPaths.sarifPath));
 
     $("candidate-back").addEventListener("click", () => showScreen("results"));
     $("candidate-host-link").addEventListener("click", () => {
@@ -1525,6 +1820,8 @@
     $("settings-replace-tinyfish").addEventListener("click", () => openKeyModal("tinyfish"));
     $("settings-replace-etherscan").addEventListener("click", () => openKeyModal("etherscan"));
     $("settings-remove-etherscan").addEventListener("click", () => openModal("confirm-modal"));
+    $("settings-replace-rpc").addEventListener("click", () => openKeyModal("rpc"));
+    $("settings-remove-rpc").addEventListener("click", removeRpcUrl);
     $("settings-test-connections").addEventListener("click", () => runConnectionTest(true));
     $("settings-change-folder").addEventListener("click", async () => {
       const chosen = await api.chooseOutputDir();
