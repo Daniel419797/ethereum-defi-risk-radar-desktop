@@ -168,6 +168,7 @@
           <article class="connection-card"><div class="provider-icon eth">◆</div><div><strong>Ethereum Mainnet</strong><small>Chain ID 1</small></div><span class="status-check static">✓</span></article>
           <article class="connection-card"><div class="provider-icon tinyfish">◖</div><div><strong>TinyFish</strong><small id="dashboard-tinyfish-status">Configured</small></div><span id="dashboard-tinyfish-check" class="status-check">•</span></article>
           <article class="connection-card"><div class="provider-icon etherscan">▥</div><div><strong>Etherscan</strong><small id="dashboard-etherscan-status">Optional</small></div><span id="dashboard-etherscan-check" class="status-check neutral">•</span></article>
+          <article class="connection-card"><div class="provider-icon eth">↯</div><div><strong>Read-only RPC</strong><small id="dashboard-rpc-status">Optional</small></div><span id="dashboard-rpc-check" class="status-check neutral">•</span></article>
           <button id="dashboard-test-connections" class="outline-button test-button" type="button">⌁ Test Connections</button>
         </div>
 
@@ -179,7 +180,7 @@
             <label><span>Pages / Query</span><input id="dashboard-pages" type="number" min="1" max="10" /></label>
             <button id="dashboard-start-scan" class="primary-button scan-action" type="button">▷ START SCAN</button>
           </div>
-          <div class="guardrails"><span>◇ No RPC probing</span><span>◇ No transactions</span><span>◇ No exploit generation</span></div>
+          <div class="guardrails"><span>◇ Read-only pinned RPC state when configured</span><span>◇ No transactions during scans</span><span>◇ No exploit generation</span></div>
         </article>
 
         <div class="metric-grid four">
@@ -263,6 +264,10 @@
           <div>
             <div class="candidate-title-row"><h1 id="candidate-title">Candidate</h1><span id="candidate-priority" class="priority-badge">REVIEW</span></div>
             <button id="candidate-host-link" class="host-link" type="button">source.example ↗</button>
+          </div>
+          <div class="candidate-actions">
+            <button id="candidate-watch" class="outline-button" type="button">◎ Watch Protocol</button>
+            <span id="candidate-watch-status" class="connected-badge neutral">Not watched</span>
           </div>
         </header>
 
@@ -422,6 +427,11 @@
             <div class="connection-setting-copy"><div><strong>Etherscan</strong><span id="settings-etherscan-badge" class="connected-badge neutral">Optional</span></div><small>https://api.etherscan.io/v2/api</small></div>
             <div class="inline-actions"><button id="settings-replace-etherscan" class="outline-button" type="button">Replace API Key</button><button id="settings-remove-etherscan" class="danger-button hidden" type="button">Remove</button></div>
           </div>
+          <div class="connection-setting-row">
+            <div class="provider-icon eth">↯</div>
+            <div class="connection-setting-copy"><div><strong>Ethereum Mainnet RPC</strong><span id="settings-rpc-badge" class="connected-badge neutral">Optional</span></div><small>Encrypted locally · read-only methods only · enables pinned state, bytecode attestation and monitoring</small></div>
+            <div class="inline-actions"><button id="settings-replace-rpc" class="outline-button" type="button">Configure RPC</button><button id="settings-remove-rpc" class="danger-button hidden" type="button">Remove</button></div>
+          </div>
         </article>
 
         <form id="settings-form">
@@ -492,6 +502,11 @@
         <div class="test-detail"><span>Endpoint</span><strong>https://api.etherscan.io/v2/api</strong></div>
         <div class="test-detail"><span>Message</span><strong id="connection-etherscan-message">Waiting for response</strong></div>
       </div>
+      <div id="connection-rpc-card" class="connection-test-card">
+        <div class="test-provider-header"><div class="provider-icon eth">↯</div><strong>Ethereum Mainnet RPC</strong><span id="connection-rpc-result" class="test-result pending">Testing…</span></div>
+        <div class="test-detail"><span>Mode</span><strong>Read-only · Ethereum Mainnet only</strong></div>
+        <div class="test-detail"><span>Message</span><strong id="connection-rpc-message">Waiting for response</strong></div>
+      </div>
       <button class="primary-button full-width" type="button" data-close-modal="connection-modal">Close</button>
     </div>
   </div>
@@ -510,6 +525,14 @@
   </div>
 
   <!-- Confirm remove modal -->
+  <div id="confirm-rpc-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-rpc-modal-title">
+    <div class="modal-backdrop" data-close-modal="confirm-rpc-modal"></div>
+    <div class="modal-card small-modal-card">
+      <div class="modal-header"><div><h2 id="confirm-rpc-modal-title">Remove Ethereum RPC?</h2><p>Pinned state snapshots, bytecode attestation, upgrade monitoring and protocol watches will remain unavailable until another read-only Mainnet RPC is configured.</p></div><button class="icon-button" type="button" data-close-modal="confirm-rpc-modal">×</button></div>
+      <div class="form-actions right"><button class="secondary-button" type="button" data-close-modal="confirm-rpc-modal">Cancel</button><button id="confirm-remove-rpc" class="danger-button strong" type="button">Remove RPC</button></div>
+    </div>
+  </div>
+
   <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
     <div class="modal-backdrop" data-close-modal="confirm-modal"></div>
     <div class="modal-card small-modal-card">
