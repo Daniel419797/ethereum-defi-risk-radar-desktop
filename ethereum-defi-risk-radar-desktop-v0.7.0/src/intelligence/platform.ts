@@ -4,6 +4,7 @@ import { buildProtocolKnowledgeGraph } from "./knowledgeGraph.js";
 import { selectDefiInvariants } from "./invariants.js";
 import { buildAutomaticEscalationQueue } from "./escalation.js";
 import { buildAttackPaths } from "./attackPaths.js";
+import { synthesizeProtocolInvariants } from "./invariantSynthesis.js";
 
 export function buildProtocolIntelligence(input: ProtocolIntelligenceInput): ProtocolIntelligenceBundle {
   const graph = buildProtocolKnowledgeGraph(input);
@@ -17,8 +18,15 @@ export function buildProtocolIntelligence(input: ProtocolIntelligenceInput): Pro
     assumptions: [...new Set(input.contractInspections.flatMap(item => item.protocolModel.assumptions))]
   };
   const invariants = selectDefiInvariants(combinedModel, findings);
+  const synthesizedInvariants = synthesizeProtocolInvariants({
+    protocol: combinedModel,
+    storage: input.contractInspections.flatMap(item => item.nativeAnalysis?.storage ?? []),
+    graphs: input.contractInspections.flatMap(item => item.nativeAnalysis?.graphs ?? []),
+    calls: input.contractInspections.flatMap(item => item.nativeAnalysis?.calls ?? []),
+    findings
+  });
   const escalationPlans = buildAutomaticEscalationQueue(findings, invariants);
   const attackPaths = buildAttackPaths(findings);
   const protocolModelDigest = "sha256:" + createHash("sha256").update(JSON.stringify(combinedModel)).digest("hex");
-  return { version: 1, generatedAt: new Date().toISOString(), graph, invariants, escalationPlans, attackPaths, protocolModelDigest };
+  return { version: 1, generatedAt: new Date().toISOString(), graph, invariants, synthesizedInvariants, escalationPlans, attackPaths, protocolModelDigest };
 }
