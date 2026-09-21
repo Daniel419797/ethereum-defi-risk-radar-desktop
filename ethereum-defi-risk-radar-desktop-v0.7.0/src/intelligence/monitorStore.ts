@@ -9,6 +9,7 @@ import { runMonitorCycle } from "./monitor.js";
 export type ProtocolWatch = {
   id: string;
   name: string;
+  protocolId?: string;
   intervalMinutes: number;
   targets: SnapshotTarget[];
   createdAt: string;
@@ -52,7 +53,7 @@ export async function writeMonitorRegistry(filePath: string, registry: ProtocolM
 
 export async function upsertProtocolWatch(
   filePath: string,
-  input: { name: string; intervalMinutes?: number; targets: SnapshotTarget[] }
+  input: { name: string; protocolId?: string; intervalMinutes?: number; targets: SnapshotTarget[] }
 ) {
   const name = input.name.trim();
   if (!name) throw new Error("Monitor watch requires a name.");
@@ -64,6 +65,7 @@ export async function upsertProtocolWatch(
   const watch: ProtocolWatch = {
     id,
     name,
+    protocolId: input.protocolId || existing?.protocolId,
     intervalMinutes,
     targets: input.targets,
     createdAt: existing?.createdAt || new Date().toISOString(),
