@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { inspectVerifiedSource, type SourceInspection } from "./sourceAnalyzer.js";
 import { fetchJsonBounded } from "./boundedFetch.js";
 
@@ -7,6 +8,10 @@ export type EtherscanSourceMetadata = {
   compilerVersion?: string;
   proxy: boolean;
   implementationAddress?: string;
+  sourceSha256?: string;
+  optimizationUsed?: boolean;
+  optimizationRuns?: number;
+  evmVersion?: string;
   sourceInspection?: SourceInspection;
 };
 
@@ -19,6 +24,9 @@ type EtherscanResponse = {
     CompilerVersion?: string;
     Proxy?: string;
     Implementation?: string;
+    OptimizationUsed?: string;
+    Runs?: string;
+    EVMVersion?: string;
   }> | string;
 };
 
@@ -81,10 +89,15 @@ export class EtherscanClient {
     const verified = Boolean(source || name);
     const proxy = first.Proxy === "1" || Boolean(implementation);
 
+    const runsValue = Number.parseInt((first.Runs ?? "").trim(), 10);
     return {
       verified,
       contractName: name || undefined,
       compilerVersion: (first.CompilerVersion ?? "").trim() || undefined,
+      sourceSha256: source ? createHash("sha256").update(source).digest("hex") : undefined,
+      optimizationUsed: first.OptimizationUsed === "1" ? true : first.OptimizationUsed === "0" ? false : undefined,
+      optimizationRuns: Number.isFinite(runsValue) ? runsValue : undefined,
+      evmVersion: (first.EVMVersion ?? "").trim() || undefined,
       proxy,
       implementationAddress:
         EVM_ADDRESS_RE.test(implementation) ? implementation : undefined,
