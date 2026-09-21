@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { AnalysisFinding, StorageSurface } from "../analysis/model.js";
-import { proxySlotValue, storageWordAddress } from "./rpc.js";
+import { proxySlotObservation } from "./rpc.js";
 import type {
   MonitorState,
   ProtocolGraphEdge,
@@ -57,16 +57,16 @@ function comparePinnedState(before: VersionedProtocolFacts, after: VersionedProt
     ] as const;
 
     for (const [slot, kind, severity] of slots) {
-      const oldWord = proxySlotValue(before.snapshot, refId, slot);
-      const newWord = proxySlotValue(after.snapshot, refId, slot);
-      if (!oldWord || !newWord || oldWord === newWord) continue;
+      const oldWord = proxySlotObservation(before.snapshot, refId, slot);
+      const newWord = proxySlotObservation(after.snapshot, refId, slot);
+      if (!oldWord || !newWord || oldWord.valueSha256 === newWord.valueSha256) continue;
       pushChange(changes, {
         kind,
         severity,
         contractRefId: refId,
         summary: `${slot} changed between pinned snapshots.`,
-        before: storageWordAddress(oldWord) ?? oldWord,
-        after: storageWordAddress(newWord) ?? newWord,
+        before: oldWord.decodedAddressRef ?? oldWord.valueSha256,
+        after: newWord.decodedAddressRef ?? newWord.valueSha256,
         evidence: [
           "Pinned eth_getStorageAt observation",
           `from block ${before.snapshot.blockNumber}`,
