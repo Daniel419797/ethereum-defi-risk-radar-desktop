@@ -42,7 +42,8 @@
     selectedCandidate: null,
     selectedCandidateTab: "overview",
     keyModalProvider: null,
-    connection: { tinyfish: "unknown", etherscan: "unknown" },
+    connection: { tinyfish: "unknown", etherscan: "unknown", rpc: "unknown" },
+    monitors: [],
     analysisCapabilities: [],
     analysisRunning: false,
     analysisResult: null,
@@ -390,6 +391,12 @@
     if (!state.settings.hasEtherscanApiKey && state.connection.etherscan !== "testing") {
       state.connection.etherscan = "optional";
     }
+    if (state.connection.rpc === "unknown") {
+      state.connection.rpc = state.settings.hasEthereumRpcUrl ? "configured" : "optional";
+    }
+    if (!state.settings.hasEthereumRpcUrl && state.connection.rpc !== "testing") {
+      state.connection.rpc = "optional";
+    }
     updateConnectionUI();
   }
 
@@ -418,21 +425,28 @@
   function updateConnectionUI() {
     const tf = state.connection.tinyfish;
     const es = state.connection.etherscan;
+    const rpc = state.connection.rpc;
 
     $("dashboard-tinyfish-status").textContent = providerStatusText(tf);
     $("dashboard-etherscan-status").textContent = providerStatusText(es);
+    $("dashboard-rpc-status").textContent = providerStatusText(rpc);
     $("dashboard-tinyfish-status").className = providerStatusClass(tf);
     $("dashboard-etherscan-status").className = providerStatusClass(es);
-    $("dashboard-tinyfish-check").className = `status-check ${providerStatusClass(tf)}`;
-    $("dashboard-etherscan-check").className = `status-check ${providerStatusClass(es)}`;
+    $("dashboard-rpc-status").className = providerStatusClass(rpc);
+    $("dashboard-tinyfish-check").className = "status-check " + providerStatusClass(tf);
+    $("dashboard-etherscan-check").className = "status-check " + providerStatusClass(es);
+    $("dashboard-rpc-check").className = "status-check " + providerStatusClass(rpc);
     $("dashboard-tinyfish-check").textContent = tf === "connected" ? "✓" : tf === "failed" ? "×" : "•";
     $("dashboard-etherscan-check").textContent = es === "connected" ? "✓" : es === "failed" ? "×" : "•";
+    $("dashboard-rpc-check").textContent = rpc === "connected" ? "✓" : rpc === "failed" ? "×" : "•";
 
     if (state.settings) {
       $("settings-tinyfish-badge").textContent = providerStatusText(tf);
-      $("settings-tinyfish-badge").className = `connected-badge ${tf === "failed" ? "bad" : tf === "connected" ? "" : "neutral"}`.trim();
+      $("settings-tinyfish-badge").className = "connected-badge " + (tf === "failed" ? "bad" : tf === "connected" ? "" : "neutral");
       $("settings-etherscan-badge").textContent = providerStatusText(es);
-      $("settings-etherscan-badge").className = `connected-badge ${es === "failed" ? "bad" : es === "connected" ? "" : "neutral"}`.trim();
+      $("settings-etherscan-badge").className = "connected-badge " + (es === "failed" ? "bad" : es === "connected" ? "" : "neutral");
+      $("settings-rpc-badge").textContent = providerStatusText(rpc);
+      $("settings-rpc-badge").className = "connected-badge " + (rpc === "failed" ? "bad" : rpc === "connected" ? "" : "neutral");
     }
   }
 
