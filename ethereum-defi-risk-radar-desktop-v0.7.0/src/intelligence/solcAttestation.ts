@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { attestRuntimeBytecode } from "./bytecode.js";
 import type { BytecodeAttestation } from "./model.js";
@@ -83,6 +83,85 @@ async function localSolcVersion(executable: string) {
   return match?.[1] || "";
 }
 
+async function runSolcStandardJson(
+  executable: string,
+  input: unknown
+): Promise<SolcOutput> {
+  return await new Promise<SolcOutput>((resolve, reject) => {
+    const child = spawn(executable, ["--standard-json"], {
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true
+    });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let settled = false;
+
+    const finish = (error?: Error, output?: SolcOutput) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(output!);
+    };
+
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(new Error("solc --standard-json timed out after 60 seconds."));
+    }, 60_000);
+
+    child.stdout.on("data", chunk => {
+      const buffer = Buffer.from(chunk);
+      stdoutBytes += buffer.length;
+      if (stdoutBytes > 20_000_000) {
+        child.kill("SIGKILL");
+        finish(new Error("solc stdout exceeded the 20 MB safety limit."));
+        return;
+      }
+      stdout.push(buffer);
+    });
+
+    child.stderr.on("data", chunk => {
+      const buffer = Buffer.from(chunk);
+      stderrBytes += buffer.length;
+      if (stderrBytes <= 2_000_000) stderr.push(buffer);
+    });
+
+    child.on("error", error => finish(error));
+    child.on("close", code => {
+      if (settled) return;
+      if (code !== 0 && !stdout.length) {
+        finish(
+          new Error(
+            "solc exited with code " +
+              code +
+              ": " +
+              Buffer.concat(stderr).toString("utf8").slice(0, 1000)
+          )
+        );
+        return;
+      }
+      try {
+        finish(
+          undefined,
+          JSON.parse(Buffer.concat(stdout).toString("utf8")) as SolcOutput
+        );
+      } catch (error) {
+        finish(
+          new Error(
+            "solc returned invalid standard-json output: " +
+              (error instanceof Error ? error.message : String(error))
+          )
+        );
+      }
+    });
+
+    child.stdin.on("error", error => finish(error));
+    child.stdin.end(JSON.stringify(input));
+  });
+}
+
 function findCompiledRuntime(output: SolcOutput, contractName: string) {
   const exact: string[] = [];
   const fallback: string[] = [];
@@ -156,12 +235,7 @@ export async function attestVerifiedSourceWithLocalSolc(opts: {
   });
 
   try {
-    const { stdout } = await execFileAsync(executable, ["--standard-json"], {
-      input: JSON.stringify(input),
-      timeout: 60_000,
-      maxBuffer: 20_000_000
-    });
-    const output = JSON.parse(stdout) as SolcOutput;
+    const output = await runSolcStandardJson(executable, input);
     const compileErrors = (output.errors || []).filter(
       item => item.severity === "error"
     );
