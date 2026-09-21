@@ -78,14 +78,21 @@ function reportSafeCandidates(candidates: Candidate[]): Candidate[] {
   return JSON.parse(redactAddresses(JSON.stringify(candidates))) as Candidate[];
 }
 
+function reportText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value);
+  return JSON.stringify(value);
+}
+
 function csvEscape(value: unknown) {
-  const raw = String(value ?? "");
-  const str = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
-  return `"${str.replaceAll('"', '""')}"`;
+  const raw = reportText(value);
+  const str = /^[=+\-@]/.test(raw) ? "'" + raw : raw;
+  return '"' + str.replaceAll('"', '""') + '"';
 }
 
 function htmlEscape(value: unknown) {
-  return String(value ?? "")
+  return reportText(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -136,113 +143,131 @@ function historicalFields(item: ReturnType<typeof historicalFor>) {
   };
 }
 
-function flattenSecurityFindings(candidate: Candidate): ExportFinding[] {
-  const findings: ExportFinding[] = [];
+function inspectionContext(candidate: Candidate, inspection: Inspection) {
+  return {
+    candidateId: candidate.id,
+    protocolLabel: candidate.label,
+    hostname: candidate.hostname,
+    classification: candidate.classification,
+    researchScore: candidate.researchScore,
+    ethereumConfidence: candidate.ethereumConfidence,
+    contractRefId: inspection.contractRefId || "unknown",
+    contractName: inspection.contractName || inspection.contractRefId || "Verified contract",
+    sourceRole: inspection.sourceRole || (inspection.proxy ? "PROXY" : "DIRECT"),
+    compilerVersion: inspection.compilerVersion || "",
+    proxy: Boolean(inspection.proxy)
+  };
+}
 
-  for (const inspection of candidate.ethereum.sourceInspections) {
-    const contractName = inspection.contractName || inspection.contractRefId || "Verified contract";
-    const contractRefId = inspection.contractRefId || "unknown";
-    const advanced = inspection.inspection.advancedAnalysis.findings;
+type AdvancedFinding = Inspection["inspection"]["advancedAnalysis"]["findings"][number];
+type LegacyFinding = Inspection["inspection"]["findings"][number];
 
-    for (const finding of advanced) {
-      const scope = finding.evidenceScope || finding.counterexample?.scope;
-      findings.push({
-        candidateId: candidate.id,
-        protocolLabel: candidate.label,
-        hostname: candidate.hostname,
-        classification: candidate.classification,
-        researchScore: candidate.researchScore,
-        ethereumConfidence: candidate.ethereumConfidence,
-        contractRefId,
-        contractName,
-        sourceRole: inspection.sourceRole || (inspection.proxy ? "PROXY" : "DIRECT"),
-        compilerVersion: inspection.compilerVersion || "",
-        proxy: Boolean(inspection.proxy),
-        sourceLayer: "advanced",
-        findingId: finding.id,
-        kind: finding.kind,
-        engine: finding.engine,
-        severity: finding.severity,
-        confidence: finding.confidence,
-        evidenceStrength: finding.evidenceStrength,
-        evidenceKey: evidenceKey(finding.evidenceStrength, scope),
-        evidenceScope: scope,
-        exploitabilityVerdict: finding.exploitabilityVerdict ?? "UNKNOWN",
-        title: finding.title,
-        description: finding.description,
-        remediation: finding.remediation,
-        file: finding.primaryLocation?.file || "Structural analysis",
-        line: Number(finding.primaryLocation?.line || 0),
-        column: Number(finding.primaryLocation?.column || 0),
-        reachableFromExternalEntry: finding.reachableFromExternalEntry,
-        mitigations: finding.mitigations?.map(item => item.kind) ?? [],
-        correlatedEngines: finding.correlatedEngines ?? [],
-        limitations: finding.limitations,
-        witnessPath: finding.witnessPath?.map(step =>
-          `${step.role}:${step.symbol}@${step.location.file}:${step.location.line}`
-        ) ?? [],
-        counterexampleSequence: finding.counterexample?.sequence ?? [],
-        observedViolation: finding.counterexample?.observedViolation,
-        seed: finding.counterexample?.seed,
-        blockNumber: finding.counterexample?.blockNumber,
-        ...historicalFields(historicalFor(inspection, `advanced:${finding.id}`))
-      });
-    }
+function exportAdvancedFinding(candidate: Candidate, inspection: Inspection, finding: AdvancedFinding): ExportFinding {
+  const scope = finding.evidenceScope || finding.counterexample?.scope;
+  const context = inspectionContext(candidate, inspection);
+  return {
+    ...context,
+    sourceLayer: "advanced",
+    findingId: finding.id,
+    kind: finding.kind,
+    engine: finding.engine,
+    severity: finding.severity,
+    confidence: finding.confidence,
+    evidenceStrength: finding.evidenceStrength,
+    evidenceKey: evidenceKey(finding.evidenceStrength, scope),
+    evidenceScope: scope,
+    exploitabilityVerdict: finding.exploitabilityVerdict ?? "UNKNOWN",
+    title: finding.title,
+    description: finding.description,
+    remediation: finding.remediation,
+    file: finding.primaryLocation?.file || "Structural analysis",
+    line: Number(finding.primaryLocation?.line || 0),
+    column: Number(finding.primaryLocation?.column || 0),
+    reachableFromExternalEntry: finding.reachableFromExternalEntry,
+    mitigations: finding.mitigations?.map(item => item.kind) ?? [],
+    correlatedEngines: finding.correlatedEngines ?? [],
+    limitations: finding.limitations,
+    witnessPath: finding.witnessPath?.map(step =>
+      step.role + ":" + step.symbol + "@" + step.location.file + ":" + step.location.line
+    ) ?? [],
+    counterexampleSequence: finding.counterexample?.sequence ?? [],
+    observedViolation: finding.counterexample?.observedViolation,
+    seed: finding.counterexample?.seed,
+    blockNumber: finding.counterexample?.blockNumber,
+    ...historicalFields(historicalFor(inspection, "advanced:" + finding.id))
+  };
+}
 
-    for (const finding of inspection.inspection.findings) {
-      if (SOURCE_REVIEW_ONLY_EXCLUSIONS.has(finding.kind)) continue;
-      if (sourceFindingShadowedByAdvanced(finding, advanced)) continue;
-      findings.push({
-        candidateId: candidate.id,
-        protocolLabel: candidate.label,
-        hostname: candidate.hostname,
-        classification: candidate.classification,
-        researchScore: candidate.researchScore,
-        ethereumConfidence: candidate.ethereumConfidence,
-        contractRefId,
-        contractName,
-        sourceRole: inspection.sourceRole || (inspection.proxy ? "PROXY" : "DIRECT"),
-        compilerVersion: inspection.compilerVersion || "",
-        proxy: Boolean(inspection.proxy),
-        sourceLayer: "source-review",
-        findingId: `source:${contractRefId}:${finding.kind}:${finding.file}:${finding.line}`,
-        kind: finding.kind,
-        engine: "native",
-        severity: legacySeverity(finding.severity),
-        confidence: "LOW",
-        evidenceStrength: "HEURISTIC",
-        evidenceKey: "HEURISTIC",
-        exploitabilityVerdict: "UNKNOWN",
-        title: finding.title,
-        description: finding.description,
-        file: finding.file || "Verified source",
-        line: Number(finding.line || 0),
-        column: 0,
-        mitigations: [],
-        correlatedEngines: [],
-        limitations: ["Pattern-level source review signal; presence alone does not establish exploitability."],
-        witnessPath: [],
-        counterexampleSequence: [],
-        ...historicalFields(historicalFor(inspection, `source:${finding.kind}:${finding.file}:${finding.line}`))
-      });
-    }
-  }
+function exportLegacyFinding(candidate: Candidate, inspection: Inspection, finding: LegacyFinding): ExportFinding {
+  const context = inspectionContext(candidate, inspection);
+  const findingId = ["source", context.contractRefId, finding.kind, finding.file, finding.line].join(":");
+  const historicalId = ["source", finding.kind, finding.file, finding.line].join(":");
+  return {
+    ...context,
+    sourceLayer: "source-review",
+    findingId,
+    kind: finding.kind,
+    engine: "native",
+    severity: legacySeverity(finding.severity),
+    confidence: "LOW",
+    evidenceStrength: "HEURISTIC",
+    evidenceKey: "HEURISTIC",
+    exploitabilityVerdict: "UNKNOWN",
+    title: finding.title,
+    description: finding.description,
+    file: finding.file || "Verified source",
+    line: Number(finding.line || 0),
+    column: 0,
+    mitigations: [],
+    correlatedEngines: [],
+    limitations: ["Pattern-level source review signal; presence alone does not establish exploitability."],
+    witnessPath: [],
+    counterexampleSequence: [],
+    ...historicalFields(historicalFor(inspection, historicalId))
+  };
+}
 
+function legacyFindingIncluded(finding: LegacyFinding, advanced: AdvancedFinding[]) {
+  return !SOURCE_REVIEW_ONLY_EXCLUSIONS.has(finding.kind) &&
+    !sourceFindingShadowedByAdvanced(finding, advanced);
+}
+
+function inspectionSecurityFindings(candidate: Candidate, inspection: Inspection): ExportFinding[] {
+  const advanced = inspection.inspection.advancedAnalysis.findings;
+  const advancedRows = advanced.map(finding => exportAdvancedFinding(candidate, inspection, finding));
+  const legacyRows = inspection.inspection.findings
+    .filter(finding => legacyFindingIncluded(finding, advanced))
+    .map(finding => exportLegacyFinding(candidate, inspection, finding));
+  return [...advancedRows, ...legacyRows];
+}
+
+function exportFindingKey(finding: ExportFinding) {
+  return [
+    finding.contractRefId,
+    finding.kind,
+    finding.file,
+    finding.line,
+    finding.title,
+    finding.evidenceKey,
+    finding.evidenceScope || ""
+  ].join("|");
+}
+
+function deduplicateExportFindings(findings: ExportFinding[]) {
   const seen = new Set<string>();
   return findings.filter(finding => {
-    const key = [
-      finding.contractRefId,
-      finding.kind,
-      finding.file,
-      finding.line,
-      finding.title,
-      finding.evidenceKey,
-      finding.evidenceScope || ""
-    ].join("|");
+    const key = exportFindingKey(finding);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+function flattenSecurityFindings(candidate: Candidate): ExportFinding[] {
+  const findings = candidate.ethereum.sourceInspections.flatMap(inspection =>
+    inspectionSecurityFindings(candidate, inspection)
+  );
+  return deduplicateExportFindings(findings);
 }
 
 function analysisCompleteness(candidate: Candidate) {
@@ -291,71 +316,175 @@ function assessmentStatus(candidate: Candidate, findings: ExportFinding[]) {
   return completeness.partial ? "NO_FINDINGS_EMITTED_IN_PARTIAL_SCOPE" : "NO_FINDINGS_EMITTED_IN_ANALYZED_SCOPE";
 }
 
-function renderFindingHtml(finding: ExportFinding) {
-  const location = finding.line > 0
-    ? `${finding.file}:${finding.line}${finding.column ? `:${finding.column}` : ""}`
-    : finding.file;
-  const remediation = finding.remediation
-    ? `<div class="guidance"><strong>Recommended remediation</strong><p>${htmlEscape(finding.remediation)}</p></div>`
-    : "";
-  const mitigations = finding.mitigations.length
-    ? `<details><summary>Detected mitigations</summary><ul>${finding.mitigations.map(item => `<li>${htmlEscape(item)}</li>`).join("")}</ul></details>`
-    : "";
-  const witness = finding.witnessPath.length
-    ? `<details><summary>Witness path</summary><ol>${finding.witnessPath.map(step => `<li><code>${htmlEscape(step)}</code></li>`).join("")}</ol></details>`
-    : "";
-  const counterexample = finding.observedViolation || finding.counterexampleSequence.length
-    ? `<details><summary>Counterexample evidence</summary>${finding.observedViolation ? `<p><strong>Observed violation:</strong> ${htmlEscape(finding.observedViolation)}</p>` : ""}${finding.seed !== undefined ? `<p><strong>Seed:</strong> ${htmlEscape(finding.seed)}</p>` : ""}${finding.blockNumber !== undefined ? `<p><strong>Pinned block:</strong> ${htmlEscape(finding.blockNumber)}</p>` : ""}${finding.counterexampleSequence.length ? `<ol>${finding.counterexampleSequence.slice(0, 100).map(step => `<li>${htmlEscape(step)}</li>`).join("")}</ol>` : ""}</details>`
-    : "";
-  const limitations = finding.limitations.length
-    ? `<details><summary>Limitations</summary><ul>${finding.limitations.map(item => `<li>${htmlEscape(item)}</li>`).join("")}</ul></details>`
-    : "";
-  const historical = finding.historicalAnalogueCount > 0
-    ? `<div class="history"><strong>Historical Audit Intelligence</strong><p>${htmlEscape(finding.historicalCategory || "uncategorized")} · ${Math.round((finding.historicalCategoryConfidence || 0) * 100)}% category confidence · review-priority context ${htmlEscape(finding.historicalRiskScore ?? "n/a")}/100 · ${finding.historicalAnalogueCount} analogue(s). Supporting context only.</p></div>`
-    : "";
+function findingLocation(finding: ExportFinding) {
+  if (finding.line <= 0) return finding.file;
+  const column = finding.column ? ":" + finding.column : "";
+  return finding.file + ":" + finding.line + column;
+}
 
-  return `<article class="finding severity-${htmlEscape(finding.severity.toLowerCase())}">
-    <div class="finding-head"><div><div class="badges"><span class="badge severity">${htmlEscape(finding.severity)}</span><span class="badge evidence">${htmlEscape(finding.evidenceKey.replaceAll("_", " "))}</span><span class="badge">${htmlEscape(finding.kind)}</span></div><h4>${htmlEscape(finding.title)}</h4></div><code>${htmlEscape(location)}</code></div>
-    <p class="description">${htmlEscape(finding.description)}</p>
-    <div class="meta-grid"><div class="meta"><span>Confidence</span><strong>${htmlEscape(finding.confidence)}</strong></div><div class="meta"><span>Engine</span><strong>${htmlEscape(finding.engine)}</strong></div><div class="meta"><span>Exploitability</span><strong>${htmlEscape(finding.exploitabilityVerdict)}</strong></div><div class="meta"><span>External reachability</span><strong>${finding.reachableFromExternalEntry === undefined ? "Unknown" : finding.reachableFromExternalEntry ? "Yes" : "No"}</strong></div></div>
-    ${remediation}${historical}${mitigations}${witness}${counterexample}${limitations}
-  </article>`;
+function renderListItems(items: string[], ordered = false) {
+  if (!items.length) return "";
+  const tag = ordered ? "ol" : "ul";
+  const rows = items.map(item => "<li>" + htmlEscape(item) + "</li>").join("");
+  return "<" + tag + ">" + rows + "</" + tag + ">";
+}
+
+function renderDetails(title: string, items: string[], ordered = false) {
+  if (!items.length) return "";
+  return "<details><summary>" + htmlEscape(title) + "</summary>" +
+    renderListItems(items, ordered) + "</details>";
+}
+
+function renderRemediation(finding: ExportFinding) {
+  if (!finding.remediation) return "";
+  return '<div class="guidance"><strong>Recommended remediation</strong><p>' +
+    htmlEscape(finding.remediation) + "</p></div>";
+}
+
+function renderHistoricalContext(finding: ExportFinding) {
+  if (finding.historicalAnalogueCount <= 0) return "";
+  const category = finding.historicalCategory || "uncategorized";
+  const confidence = Math.round((finding.historicalCategoryConfidence || 0) * 100);
+  const riskScore = finding.historicalRiskScore ?? "n/a";
+  const summary = [
+    category,
+    confidence + "% category confidence",
+    "review-priority context " + riskScore + "/100",
+    finding.historicalAnalogueCount + " analogue(s)",
+    "Supporting context only."
+  ].join(" · ");
+  return '<div class="history"><strong>Historical Audit Intelligence</strong><p>' +
+    htmlEscape(summary) + "</p></div>";
+}
+
+function renderCounterexample(finding: ExportFinding) {
+  const rows: string[] = [];
+  if (finding.observedViolation) rows.push("Observed violation: " + finding.observedViolation);
+  if (finding.seed !== undefined) rows.push("Seed: " + finding.seed);
+  if (finding.blockNumber !== undefined) rows.push("Pinned block: " + finding.blockNumber);
+  rows.push(...finding.counterexampleSequence.map((step, index) => (index + 1) + ". " + step));
+  return renderDetails("Counterexample evidence", rows);
+}
+
+function externalReachabilityText(finding: ExportFinding) {
+  if (finding.reachableFromExternalEntry === undefined) return "Unknown";
+  return finding.reachableFromExternalEntry ? "Yes" : "No";
+}
+
+function renderFindingMeta(finding: ExportFinding) {
+  const values = [
+    ["Confidence", finding.confidence],
+    ["Engine", finding.engine],
+    ["Exploitability", finding.exploitabilityVerdict],
+    ["External reachability", externalReachabilityText(finding)]
+  ];
+  return '<div class="meta-grid">' + values.map(([label, value]) =>
+    '<div class="meta"><span>' + htmlEscape(label) + '</span><strong>' +
+    htmlEscape(value) + "</strong></div>"
+  ).join("") + "</div>";
+}
+
+function renderFindingHtml(finding: ExportFinding) {
+  const location = findingLocation(finding);
+  const severityClass = htmlEscape(finding.severity.toLowerCase());
+  const evidenceLabel = htmlEscape(finding.evidenceKey.replaceAll("_", " "));
+  const badges = '<div class="badges"><span class="badge severity">' + htmlEscape(finding.severity) +
+    '</span><span class="badge evidence">' + evidenceLabel +
+    '</span><span class="badge">' + htmlEscape(finding.kind) + "</span></div>";
+  const heading = '<div class="finding-head"><div>' + badges + "<h4>" +
+    htmlEscape(finding.title) + "</h4></div><code>" + htmlEscape(location) + "</code></div>";
+  const description = '<p class="description">' + htmlEscape(finding.description) + "</p>";
+
+  return '<article class="finding severity-' + severityClass + '">' +
+    heading +
+    description +
+    renderFindingMeta(finding) +
+    renderRemediation(finding) +
+    renderHistoricalContext(finding) +
+    renderDetails("Detected mitigations", finding.mitigations) +
+    renderDetails("Witness path", finding.witnessPath, true) +
+    renderCounterexample(finding) +
+    renderDetails("Limitations", finding.limitations) +
+    "</article>";
+}
+
+const severityRank: Record<AnalysisSeverity, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4 };
+const evidenceRank: Record<EvidenceKey, number> = { REPRODUCED_FORK: 0, REPRODUCED_MODEL: 1, EXECUTED: 2, STRUCTURAL: 3, HEURISTIC: 4 };
+
+function sortExportFindings(findings: ExportFinding[]) {
+  return [...findings].sort((a, b) =>
+    evidenceRank[a.evidenceKey] - evidenceRank[b.evidenceKey] ||
+    severityRank[a.severity] - severityRank[b.severity] ||
+    a.line - b.line
+  );
+}
+
+function groupExportFindings(findings: ExportFinding[]) {
+  const groups = new Map<string, ExportFinding[]>();
+  for (const finding of findings) {
+    const key = finding.contractRefId + ":" + finding.contractName;
+    const current = groups.get(key) ?? [];
+    current.push(finding);
+    groups.set(key, current);
+  }
+  return [...groups.values()];
+}
+
+function renderContractGroup(group: ExportFinding[]) {
+  const first = group[0];
+  const compiler = first.compilerVersion ? " · " + first.compilerVersion : "";
+  const header = '<div class="contract-head"><div><h3>' + htmlEscape(first.contractName) +
+    "</h3><small>" + htmlEscape(first.sourceRole + compiler) +
+    "</small></div><strong>" + group.length + " finding(s)</strong></div>";
+  return '<section class="contract">' + header +
+    sortExportFindings(group).map(renderFindingHtml).join("") + "</section>";
+}
+
+function renderCompletenessWarning(completeness: ReturnType<typeof analysisCompleteness>) {
+  if (!completeness.partial) return "";
+  const summary = completeness.advancedDropped + " advanced matches dropped, " +
+    completeness.sourceReviewDropped + " source-review signals dropped, and " +
+    completeness.truncatedSourceCharacters +
+    " source characters outside configured budgets. Absence of a finding is not a clean pass.";
+  return '<div class="warning"><strong>Partial analysis</strong><p>' +
+    htmlEscape(summary) + "</p></div>";
+}
+
+function renderCandidateStats(counts: ReturnType<typeof findingCounts>) {
+  const reproduced = counts.evidence.REPRODUCED_MODEL + counts.evidence.REPRODUCED_FORK;
+  const stats = [
+    ["Critical", counts.severity.CRITICAL],
+    ["High", counts.severity.HIGH],
+    ["Reproduced", reproduced],
+    ["Executed", counts.evidence.EXECUTED],
+    ["Structural", counts.evidence.STRUCTURAL],
+    ["Heuristic", counts.evidence.HEURISTIC]
+  ];
+  return '<div class="stats">' + stats.map(([label, value]) =>
+    "<div><span>" + htmlEscape(label) + "</span><strong>" + htmlEscape(value) + "</strong></div>"
+  ).join("") + "</div>";
 }
 
 function renderCandidateHtml(candidate: Candidate) {
   const findings = flattenSecurityFindings(candidate);
   const counts = findingCounts(findings);
   const completeness = analysisCompleteness(candidate);
-  const groups = new Map<string, ExportFinding[]>();
-  for (const finding of findings) {
-    const key = `${finding.contractRefId}:${finding.contractName}`;
-    const current = groups.get(key) ?? [];
-    current.push(finding);
-    groups.set(key, current);
-  }
+  const status = assessmentStatus(candidate, findings).replaceAll("_", " ");
+  const header = '<header class="candidate-head"><div><small>' + htmlEscape(candidate.hostname) +
+    "</small><h2>" + htmlEscape(candidate.label) + "</h2><p>" + htmlEscape(status) +
+    '</p></div><div class="score"><strong>' + candidate.researchScore +
+    "</strong><span>research score</span></div></header>";
+  const groups = groupExportFindings(findings);
+  const findingsHtml = groups.length
+    ? groups.map(renderContractGroup).join("")
+    : '<div class="empty">No security findings were emitted in the analyzed scope. This does not prove the protocol is vulnerability-free.</div>';
 
-  const severityOrder: Record<AnalysisSeverity, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4 };
-  const evidenceOrder: Record<EvidenceKey, number> = { REPRODUCED_FORK: 0, REPRODUCED_MODEL: 1, EXECUTED: 2, STRUCTURAL: 3, HEURISTIC: 4 };
-  const groupHtml = [...groups.values()].map(group => {
-    const first = group[0];
-    const sorted = [...group].sort((a, b) =>
-      evidenceOrder[a.evidenceKey] - evidenceOrder[b.evidenceKey] ||
-      severityOrder[a.severity] - severityOrder[b.severity] ||
-      a.line - b.line
-    );
-    return `<section class="contract"><div class="contract-head"><div><h3>${htmlEscape(first.contractName)}</h3><small>${htmlEscape(first.sourceRole)}${first.compilerVersion ? ` · ${htmlEscape(first.compilerVersion)}` : ""}</small></div><strong>${sorted.length} finding(s)</strong></div>${sorted.map(renderFindingHtml).join("")}</section>`;
-  }).join("");
-
-  const completenessHtml = completeness.partial
-    ? `<div class="warning"><strong>Partial analysis</strong><p>${completeness.advancedDropped} advanced matches dropped, ${completeness.sourceReviewDropped} source-review signals dropped, and ${completeness.truncatedSourceCharacters} source characters outside configured budgets. Absence of a finding is not a clean pass.</p></div>`
-    : "";
-
-  return `<section class="candidate">
-    <header class="candidate-head"><div><small>${htmlEscape(candidate.hostname)}</small><h2>${htmlEscape(candidate.label)}</h2><p>${htmlEscape(assessmentStatus(candidate, findings).replaceAll("_", " "))}</p></div><div class="score"><strong>${candidate.researchScore}</strong><span>research score</span></div></header>
-    <div class="stats"><div><span>Critical</span><strong>${counts.severity.CRITICAL}</strong></div><div><span>High</span><strong>${counts.severity.HIGH}</strong></div><div><span>Reproduced</span><strong>${counts.evidence.REPRODUCED_MODEL + counts.evidence.REPRODUCED_FORK}</strong></div><div><span>Executed</span><strong>${counts.evidence.EXECUTED}</strong></div><div><span>Structural</span><strong>${counts.evidence.STRUCTURAL}</strong></div><div><span>Heuristic</span><strong>${counts.evidence.HEURISTIC}</strong></div></div>
-    ${completenessHtml}
-    ${groupHtml || `<div class="empty">No security findings were emitted in the analyzed scope. This does not prove the protocol is vulnerability-free.</div>`}
-  </section>`;
+  return '<section class="candidate">' +
+    header +
+    renderCandidateStats(counts) +
+    renderCompletenessWarning(completeness) +
+    findingsHtml +
+    "</section>";
 }
 
 function securityReviewHtml(candidates: Candidate[], generatedAt: string, startYear: number, endYear: number) {
