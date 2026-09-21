@@ -31,7 +31,7 @@
     currentScreen: "dashboard",
     onboarding: false,
     onboardingStep: 1,
-    draftKeys: { tinyfishApiKey: "", etherscanApiKey: "" },
+    draftKeys: { tinyfishApiKey: "", etherscanApiKey: "", ethereumRpcUrl: "" },
     candidates: [],
     reportPaths: null,
     lastScan: null,
@@ -369,6 +369,7 @@
     return {
       tinyfishApiKey: state.draftKeys.tinyfishApiKey,
       etherscanApiKey: state.draftKeys.etherscanApiKey || undefined,
+      ethereumRpcUrl: state.draftKeys.ethereumRpcUrl || undefined,
       tinyfishEndpoint: $("setup-endpoint").value.trim(),
       maxPagesPerQuery: clamp($("setup-pages").value, 1, 10, 1),
       minPublicSignals: clamp($("setup-min-signals").value, 2, 8, 2),
@@ -1735,6 +1736,7 @@
       }
       state.draftKeys.tinyfishApiKey = tinyfish;
       state.draftKeys.etherscanApiKey = $("setup-etherscan-key").value.trim();
+      state.draftKeys.ethereumRpcUrl = $("setup-rpc-url").value.trim();
       showOnboardingStep(2);
     });
 
@@ -1757,6 +1759,7 @@
         }
         state.connection.tinyfish = "configured";
         state.connection.etherscan = state.settings.hasEtherscanApiKey ? "configured" : "optional";
+        state.connection.rpc = state.settings.hasEthereumRpcUrl ? "configured" : "optional";
         setOnboarding(false);
         $("dashboard-start-year").value = "2016";
         $("dashboard-end-year").value = String(currentYear);
@@ -1802,6 +1805,8 @@
       const url = state.selectedCandidate?.evidence?.find(e => e.sourceUrl)?.sourceUrl;
       if (url) api.openExternal(url);
     });
+    $("candidate-watch").addEventListener("click", toggleCandidateWatchRun);
+    $("candidate-unwatch").addEventListener("click", stopCandidateWatch);
     document.querySelectorAll(".candidate-tab").forEach(button => {
       button.addEventListener("click", () => switchCandidateTab(button.dataset.candidateTab));
     });
@@ -1836,6 +1841,8 @@
     $("settings-replace-tinyfish").addEventListener("click", () => openKeyModal("tinyfish"));
     $("settings-replace-etherscan").addEventListener("click", () => openKeyModal("etherscan"));
     $("settings-remove-etherscan").addEventListener("click", () => openModal("confirm-modal"));
+    $("settings-replace-rpc").addEventListener("click", () => openKeyModal("rpc"));
+    $("settings-remove-rpc").addEventListener("click", () => openModal("confirm-rpc-modal"));
     $("settings-test-connections").addEventListener("click", () => runConnectionTest(true));
     $("settings-change-folder").addEventListener("click", async () => {
       const chosen = await api.chooseOutputDir();
@@ -1846,10 +1853,11 @@
     $("settings-remove-cli").addEventListener("click", uninstallCliFromUi);
     $("key-modal-form").addEventListener("submit", saveReplacementKey);
     $("confirm-remove-etherscan").addEventListener("click", removeEtherscanKey);
+    $("confirm-remove-rpc").addEventListener("click", removeRpcUrl);
 
     document.addEventListener("keydown", event => {
       if (event.key !== "Escape") return;
-      for (const id of ["connection-modal", "key-modal", "confirm-modal"]) {
+      for (const id of ["connection-modal", "key-modal", "confirm-modal", "confirm-rpc-modal"]) {
         if (!$(id).classList.contains("hidden")) closeModal(id);
       }
     });
@@ -1880,6 +1888,27 @@
       addLog(`ERROR: ${payload.message || "Unknown scan error"}`);
       showToast(payload.message || "Scan failed.", "error");
     });
+    api.onMonitorCycle(payload => {
+      if (!payload) return;
+      addLog(
+        "Monitor " + (payload.name || payload.id || "protocol") +
+        " checked at block " + (payload.blockNumber || "—") +
+        (payload.changed ? " · changes detected" : " · unchanged")
+      );
+    });
+    api.onMonitorAlert(payload => {
+      if (!payload) return;
+      const count = payload.changes?.length || 0;
+      addLog("MONITOR ALERT: " + (payload.name || payload.id || "protocol") + " · " + count + " change(s)");
+      showToast(
+        "Protocol change detected for " + (payload.name || "watched protocol") + ": " + count + " monitored change(s).",
+        "error"
+      );
+    });
+    api.onMonitorError(payload => {
+      if (!payload?.message) return;
+      addLog("MONITOR ERROR: " + payload.message);
+    });
     api.onAnalysisState(payload => setAnalysisRunning(Boolean(payload?.running), payload?.running ? `${payload.label || "Analysis"} is running...` : undefined));
     api.onAnalysisProgress(payload => { if (payload?.message) $("analysis-status").textContent = payload.message; });
     api.onAnalysisError(payload => { if (payload?.message) $("analysis-status").textContent = payload.message; });
@@ -1897,6 +1926,7 @@
       await refreshSettings();
       await refreshCliStatus();
       await refreshAnalysisCapabilities();
+      await refreshMonitors();
       $("setup-secure-warning").classList.toggle("hidden", Boolean(state.settings.secureStorageAvailable));
 
       const last = await api.getLastScan();
