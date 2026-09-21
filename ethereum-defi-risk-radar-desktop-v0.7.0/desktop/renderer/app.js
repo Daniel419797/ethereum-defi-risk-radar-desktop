@@ -466,22 +466,30 @@
 
     setProviderStatus("tinyfish", "testing");
     setProviderStatus("etherscan", state.settings.hasEtherscanApiKey ? "testing" : "optional");
+    setProviderStatus("rpc", state.settings.hasEthereumRpcUrl ? "testing" : "optional");
 
     $("connection-modal-subtitle").textContent = "Testing all configured connections...";
     $("connection-tinyfish-result").className = "test-result pending";
     $("connection-tinyfish-result").textContent = "Testing…";
     $("connection-tinyfish-message").textContent = "Waiting for response";
     $("connection-tinyfish-endpoint").textContent = state.settings.tinyfishEndpoint;
+
     $("connection-etherscan-result").className = state.settings.hasEtherscanApiKey ? "test-result pending" : "test-result neutral";
     $("connection-etherscan-result").textContent = state.settings.hasEtherscanApiKey ? "Testing…" : "Not configured";
     $("connection-etherscan-message").textContent = state.settings.hasEtherscanApiKey ? "Waiting for response" : "Optional enrichment disabled";
+
+    $("connection-rpc-result").className = state.settings.hasEthereumRpcUrl ? "test-result pending" : "test-result neutral";
+    $("connection-rpc-result").textContent = state.settings.hasEthereumRpcUrl ? "Testing…" : "Not configured";
+    $("connection-rpc-message").textContent = state.settings.hasEthereumRpcUrl ? "Waiting for response" : "Pinned state and monitoring disabled";
+
     if (open) openModal("connection-modal");
 
     try {
       const result = await api.testConnections();
+
       const tfStatus = result.tinyfish.ok ? "connected" : "failed";
       setProviderStatus("tinyfish", tfStatus);
-      $("connection-tinyfish-result").className = `test-result ${result.tinyfish.ok ? "good" : "bad"}`;
+      $("connection-tinyfish-result").className = "test-result " + (result.tinyfish.ok ? "good" : "bad");
       $("connection-tinyfish-result").textContent = result.tinyfish.ok ? "Connected" : "Failed";
       $("connection-tinyfish-message").textContent = result.tinyfish.message;
 
@@ -489,14 +497,23 @@
         setProviderStatus("etherscan", "optional");
         $("connection-etherscan-result").className = "test-result neutral";
         $("connection-etherscan-result").textContent = "Not configured";
-        $("connection-etherscan-message").textContent = result.etherscan.message;
       } else {
-        const esStatus = result.etherscan.ok ? "connected" : "failed";
-        setProviderStatus("etherscan", esStatus);
-        $("connection-etherscan-result").className = `test-result ${result.etherscan.ok ? "good" : "bad"}`;
+        setProviderStatus("etherscan", result.etherscan.ok ? "connected" : "failed");
+        $("connection-etherscan-result").className = "test-result " + (result.etherscan.ok ? "good" : "bad");
         $("connection-etherscan-result").textContent = result.etherscan.ok ? "Connected" : "Failed";
-        $("connection-etherscan-message").textContent = result.etherscan.message;
       }
+      $("connection-etherscan-message").textContent = result.etherscan.message;
+
+      if (result.ethereumRpc.ok === null) {
+        setProviderStatus("rpc", "optional");
+        $("connection-rpc-result").className = "test-result neutral";
+        $("connection-rpc-result").textContent = "Not configured";
+      } else {
+        setProviderStatus("rpc", result.ethereumRpc.ok ? "connected" : "failed");
+        $("connection-rpc-result").className = "test-result " + (result.ethereumRpc.ok ? "good" : "bad");
+        $("connection-rpc-result").textContent = result.ethereumRpc.ok ? "Connected" : "Failed";
+      }
+      $("connection-rpc-message").textContent = result.ethereumRpc.message;
       $("connection-modal-subtitle").textContent = "Connection test complete.";
     } catch (error) {
       setProviderStatus("tinyfish", "failed");
