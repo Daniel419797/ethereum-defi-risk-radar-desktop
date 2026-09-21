@@ -87,6 +87,15 @@
               </span>
             </label>
 
+            <label class="field-group">
+              <span class="field-label">Ethereum Mainnet RPC URL <em>optional</em></span>
+              <span class="field-help">Enables read-only pinned state snapshots, runtime attestation and monitoring. HTTPS only.</span>
+              <span class="secret-input-wrap">
+                <input id="setup-rpc-url" type="password" autocomplete="off" inputmode="url" placeholder="https://your-mainnet-rpc.example" />
+                <button class="text-button reveal-button" type="button" data-reveal="setup-rpc-url">Show</button>
+              </span>
+            </label>
+
             <div id="setup-secure-warning" class="notice danger hidden">
               Secure OS encryption is unavailable. API credentials cannot be stored safely on this device.
             </div>
@@ -168,6 +177,7 @@
           <article class="connection-card"><div class="provider-icon eth">◆</div><div><strong>Ethereum Mainnet</strong><small>Chain ID 1</small></div><span class="status-check static">✓</span></article>
           <article class="connection-card"><div class="provider-icon tinyfish">◖</div><div><strong>TinyFish</strong><small id="dashboard-tinyfish-status">Configured</small></div><span id="dashboard-tinyfish-check" class="status-check">•</span></article>
           <article class="connection-card"><div class="provider-icon etherscan">▥</div><div><strong>Etherscan</strong><small id="dashboard-etherscan-status">Optional</small></div><span id="dashboard-etherscan-check" class="status-check neutral">•</span></article>
+          <article class="connection-card"><div class="provider-icon rpc">◈</div><div><strong>Mainnet RPC</strong><small id="dashboard-rpc-status">Optional</small></div><span id="dashboard-rpc-check" class="status-check neutral">•</span></article>
           <button id="dashboard-test-connections" class="outline-button test-button" type="button">⌁ Test Connections</button>
         </div>
 
@@ -179,7 +189,7 @@
             <label><span>Pages / Query</span><input id="dashboard-pages" type="number" min="1" max="10" /></label>
             <button id="dashboard-start-scan" class="primary-button scan-action" type="button">▷ START SCAN</button>
           </div>
-          <div class="guardrails"><span>◇ No RPC probing</span><span>◇ No transactions</span><span>◇ No exploit generation</span></div>
+          <div class="guardrails"><span>◇ Read-only pinned RPC only</span><span>◇ No transactions</span><span>◇ No private-key custody</span></div>
         </article>
 
         <div class="metric-grid four">
@@ -251,6 +261,7 @@
             <button id="results-show-summary-csv" class="secondary-button" type="button">Summary CSV</button>
             <button id="results-show-findings-csv" class="secondary-button" type="button">Findings CSV</button>
             <button id="results-show-security-html" class="secondary-button" type="button">Security HTML</button>
+            <button id="results-show-sarif" class="secondary-button" type="button">SARIF</button>
           </div>
         </article>
       </section>
@@ -273,6 +284,7 @@
         <div class="candidate-tabs" role="tablist">
           <button class="candidate-tab active" type="button" data-candidate-tab="overview">Overview</button>
           <button class="candidate-tab" type="button" data-candidate-tab="findings">Security Findings <span id="candidate-findings-count" class="tab-count">0</span></button>
+          <button class="candidate-tab" type="button" data-candidate-tab="intelligence">Protocol Intelligence <span id="candidate-intelligence-count" class="tab-count">0</span></button>
           <button class="candidate-tab" type="button" data-candidate-tab="evidence">Public Evidence <span id="candidate-evidence-count" class="tab-count">0</span></button>
         </div>
 
@@ -302,6 +314,40 @@
           </div>
           <div id="candidate-findings-list" class="finding-list"></div>
           <div id="candidate-findings-empty" class="empty-state hidden"><div class="empty-icon">—</div><strong>No findings match this filter</strong><span>No emitted finding should be interpreted as proof that the protocol is vulnerability-free.</span></div>
+        </div>
+
+        <div id="candidate-tab-intelligence" class="candidate-tab-panel hidden">
+          <p class="tab-intro">Source-backed architecture, pinned-state provenance, attestation, invariant applicability and evidence escalation. RPC-derived claims always identify their pinned block.</p>
+          <div id="candidate-intelligence-summary" class="metric-grid six"></div>
+          <div id="candidate-intelligence-provenance" class="notice info intelligence-provenance"></div>
+
+          <div class="intelligence-layout">
+            <article class="panel intelligence-panel">
+              <div class="panel-title-row"><div><h2>Protocol Knowledge Graph</h2><p>Contracts, implementations, dependencies, assets, control surfaces and findings.</p></div><span id="candidate-graph-hash" class="phase-badge">NO GRAPH</span></div>
+              <div id="candidate-graph-nodes" class="graph-node-grid"></div>
+              <div id="candidate-graph-edges" class="graph-edge-list"></div>
+            </article>
+
+            <article class="panel intelligence-panel">
+              <div class="panel-title-row"><div><h2>Bytecode Attestation</h2><p>Exact local recompilation when possible; otherwise provenance is stated explicitly.</p></div></div>
+              <div id="candidate-attestations" class="attestation-list"></div>
+            </article>
+          </div>
+
+          <article class="panel intelligence-panel">
+            <div class="panel-title-row"><div><h2>Applicable DeFi Invariants</h2><p>Protocol-aware properties selected from architecture and source evidence.</p></div></div>
+            <div id="candidate-invariants" class="invariant-grid"></div>
+          </article>
+
+          <article class="panel intelligence-panel">
+            <div class="panel-title-row"><div><h2>Evidence Escalation Queue</h2><p>Deterministic next steps from structural suspicion toward executed and pinned-fork evidence.</p></div></div>
+            <div id="candidate-escalation" class="escalation-list"></div>
+          </article>
+
+          <article class="panel intelligence-panel attack-path-panel">
+            <div class="panel-title-row"><div><h2>Attack Path Explorer</h2><p>Source-linked paths from reachable entry points through state/control dependencies to observed impact.</p></div></div>
+            <div id="candidate-attack-paths" class="attack-path-list"></div>
+          </article>
         </div>
 
         <div id="candidate-tab-evidence" class="candidate-tab-panel hidden">
@@ -388,6 +434,11 @@
             <div class="connection-setting-copy"><div><strong>Etherscan</strong><span id="settings-etherscan-badge" class="connected-badge neutral">Optional</span></div><small>https://api.etherscan.io/v2/api</small></div>
             <div class="inline-actions"><button id="settings-replace-etherscan" class="outline-button" type="button">Replace API Key</button><button id="settings-remove-etherscan" class="danger-button hidden" type="button">Remove</button></div>
           </div>
+          <div class="connection-setting-row">
+            <div class="provider-icon rpc">◈</div>
+            <div class="connection-setting-copy"><div><strong>Ethereum Mainnet RPC</strong><span id="settings-rpc-badge" class="connected-badge neutral">Optional</span></div><small>Encrypted locally · read-only JSON-RPC methods only · HTTPS required</small></div>
+            <div class="inline-actions"><button id="settings-replace-rpc" class="outline-button" type="button">Configure RPC</button><button id="settings-remove-rpc" class="danger-button hidden" type="button">Remove</button></div>
+          </div>
         </article>
 
         <form id="settings-form">
@@ -457,6 +508,11 @@
         <div class="test-provider-header"><div class="provider-icon etherscan">▥</div><strong>Etherscan API</strong><span id="connection-etherscan-result" class="test-result pending">Testing…</span></div>
         <div class="test-detail"><span>Endpoint</span><strong>https://api.etherscan.io/v2/api</strong></div>
         <div class="test-detail"><span>Message</span><strong id="connection-etherscan-message">Waiting for response</strong></div>
+      </div>
+      <div id="connection-rpc-card" class="connection-test-card">
+        <div class="test-provider-header"><div class="provider-icon rpc">◈</div><strong>Ethereum Mainnet RPC</strong><span id="connection-rpc-result" class="test-result pending">Testing…</span></div>
+        <div class="test-detail"><span>Policy</span><strong>HTTPS · chainId 1 · read-only methods</strong></div>
+        <div class="test-detail"><span>Message</span><strong id="connection-rpc-message">Waiting for response</strong></div>
       </div>
       <button class="primary-button full-width" type="button" data-close-modal="connection-modal">Close</button>
     </div>
