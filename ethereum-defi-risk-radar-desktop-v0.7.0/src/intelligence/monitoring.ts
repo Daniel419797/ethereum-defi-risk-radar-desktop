@@ -2,8 +2,7 @@ import { createHash } from "node:crypto";
 import {
   capturePinnedStateSnapshot,
   createReadonlyEthereumRpc,
-  proxySlotValue,
-  storageWordAddress,
+  proxySlotObservation,
   type SnapshotContractTarget
 } from "./rpc.js";
 import type {
@@ -71,9 +70,9 @@ function compareSnapshots(target: MonitorTarget, before: PinnedStateSnapshot, af
     ] as const;
 
     for (const [slot, kind, severity] of slotChecks) {
-      const oldWord = proxySlotValue(before, refId, slot);
-      const newWord = proxySlotValue(after, refId, slot);
-      if (!oldWord || !newWord || oldWord === newWord) continue;
+      const oldWord = proxySlotObservation(before, refId, slot);
+      const newWord = proxySlotObservation(after, refId, slot);
+      if (!oldWord || !newWord || oldWord.valueSha256 === newWord.valueSha256) continue;
       emitChange(
         events,
         target,
@@ -82,8 +81,8 @@ function compareSnapshots(target: MonitorTarget, before: PinnedStateSnapshot, af
         after,
         {
           contractRefId: refId,
-          before: storageWordAddress(oldWord) ?? oldWord,
-          after: storageWordAddress(newWord) ?? newWord,
+          before: oldWord.decodedAddressRef ?? oldWord.valueSha256,
+          after: newWord.decodedAddressRef ?? newWord.valueSha256,
           severity
         }
       );
