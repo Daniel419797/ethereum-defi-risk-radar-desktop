@@ -97,6 +97,7 @@ export type EthereumMetadata = {
   sourceHighReviewCount: number;
   advancedFindingCount: number;
   bytecodeContractsAnalyzed: number;
+  bytecodeFindingCount: number;
   sourceInspections: ContractInspectionSummary[];
   bytecodeInspections: BytecodeInspectionSummary[];
   pinnedStateSnapshot?: PinnedStateSnapshot;
