@@ -1,0 +1,55 @@
+name: Risk Radar Security Review CI
+
+on:
+  pull_request:
+    paths:
+      - "ethereum-defi-risk-radar-desktop-v0.7.0/**"
+      - ".github/workflows/security-review-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "ethereum-defi-risk-radar-desktop-v0.7.0/**"
+      - ".github/workflows/security-review-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: risk-radar-security-review-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Build and security verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ethereum-defi-risk-radar-desktop-v0.7.0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.16.0"
+          cache: npm
+          cache-dependency-path: ethereum-defi-risk-radar-desktop-v0.7.0/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Repository gates
+        run: npm run check
+
+      - name: Native analysis regression
+        run: npm run test:analysis
+
+      - name: Evidence-grade proof regression
+        run: npm run test:proof
+
+      - name: Desktop analysis regression
+        run: npm run test:desktop-analysis

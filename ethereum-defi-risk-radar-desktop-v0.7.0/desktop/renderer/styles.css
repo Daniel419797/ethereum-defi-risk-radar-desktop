@@ -296,7 +296,7 @@ select { cursor:pointer; }
 .interpretation-panel { padding:18px 20px; }
 .interpretation-panel h2 { margin:0 0 8px; font-size:15px; color:#e9f0f8; }
 .interpretation-panel p { margin:6px 0; color:#b9c6d2; }
-.findings-toolbar { display:grid; grid-template-columns:190px 260px 190px; gap:12px; padding:12px 14px; border:1px solid var(--border); border-radius:8px; background:#0a1929; margin:14px 0; }
+.findings-toolbar { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; padding:12px 14px; border:1px solid var(--border); border-radius:8px; background:#0a1929; margin:14px 0; }
 .findings-toolbar label { display:grid; grid-template-columns:auto 1fr; align-items:center; gap:9px; color:#aab6c3; font-size:11px; }
 .findings-toolbar select { min-height:36px; padding:7px 9px; }
 .finding-list, .evidence-list { display:grid; gap:10px; }
@@ -501,4 +501,53 @@ select { cursor:pointer; }
   .activity-summary-column { grid-template-columns:1fr; }
   .modal { padding:10px; }
   .modal-card, .connection-modal-card, .small-modal-card { width:calc(100vw - 20px); max-height:calc(100vh - 20px); padding:16px; }
+}
+
+
+/* Finding-first security review v2 */
+.analysis-completeness-warning { margin:14px 0; border-color:#765d2f; background:#17160f; color:#ffe2a6; }
+.analysis-completeness-warning strong { display:block; color:#ffe0a0; }
+.analysis-completeness-warning ul { margin:8px 0 0 18px; padding:0; color:#cfbd99; }
+.analysis-completeness-warning li + li { margin-top:4px; }
+.finding-contract-group { display:grid; gap:10px; }
+.finding-contract-group + .finding-contract-group { margin-top:8px; }
+.finding-contract-header { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; padding:9px 4px 5px; border-bottom:1px solid rgba(255,255,255,.06); }
+.finding-contract-header h3 { margin:0; font-size:15px; }
+.finding-contract-header small { display:block; margin-top:3px; color:#7f90a2; font-size:10px; }
+.finding-contract-header > strong { color:#9fb2c6; font-size:11px; }
+.finding-card-detailed { align-items:stretch; grid-template-columns:112px minmax(0,1fr) 190px; }
+.severity-block.critical { color:#ffd4d6; border-color:#79414a; background:#241317; }
+.severity-block.high { color:#ffd8c8; border-color:#73503d; background:#25170f; }
+.finding-heading-row { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; }
+.finding-heading-row h3 { margin:0; }
+.finding-badges { display:flex; justify-content:flex-end; gap:6px; flex-wrap:wrap; }
+.finding-badge { display:inline-flex; align-items:center; min-height:23px; border:1px solid #35506b; border-radius:999px; padding:3px 7px; color:#b8c7d7; background:#0b1a2a; font-size:9px; font-weight:750; text-transform:uppercase; letter-spacing:.025em; }
+.finding-badge.evidence.reproduced_fork, .finding-badge.evidence.reproduced_model { color:#ead9ff; border-color:#62477a; background:#1a1423; }
+.finding-badge.evidence.executed { color:#d9e7ff; border-color:#3e5f88; background:#101a28; }
+.finding-badge.evidence.structural { color:#d7efff; border-color:#365f79; background:#0e1b25; }
+.finding-badge.evidence.heuristic { color:#a9b5c1; border-color:#3a4c60; background:#0a1724; }
+.finding-meta-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; margin-top:11px; }
+.finding-meta-item { min-width:0; border:1px solid rgba(255,255,255,.055); border-radius:6px; background:#081522; padding:8px; display:grid; gap:3px; }
+.finding-meta-item span { color:#75879a; font-size:8px; text-transform:uppercase; letter-spacing:.04em; }
+.finding-meta-item strong { color:#c3cfda; font-size:10px; overflow-wrap:anywhere; }
+.finding-guidance, .finding-history { margin-top:10px; border:1px solid #263d55; border-radius:7px; background:#091827; padding:10px 12px; }
+.finding-guidance strong, .finding-history strong { color:#d9e4ee; font-size:10px; }
+.finding-guidance p, .finding-history p { margin:5px 0 0; color:#9eafbf; font-size:10px; line-height:1.55; }
+.finding-history { border-color:rgba(171,89,245,.28); background:rgba(171,89,245,.035); }
+.finding-details { margin-top:9px; border-top:1px solid rgba(255,255,255,.055); padding-top:8px; }
+.finding-details summary { cursor:pointer; color:#aebdcb; font-size:10px; font-weight:750; }
+.finding-detail-list { margin:7px 0 0 18px; padding:0; color:#91a2b2; font-size:10px; line-height:1.55; overflow-wrap:anywhere; }
+.finding-detail-list li + li { margin-top:4px; }
+.finding-location { overflow-wrap:anywhere; }
+@media (max-width:1180px) {
+  .findings-toolbar { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .finding-meta-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:760px) {
+  .findings-toolbar { grid-template-columns:1fr; }
+  .finding-card-detailed { grid-template-columns:1fr; }
+  .finding-heading-row, .finding-contract-header { flex-direction:column; align-items:flex-start; }
+  .finding-badges { justify-content:flex-start; }
+  .finding-meta-grid { grid-template-columns:1fr; }
+  .finding-side { text-align:left; }
 }
