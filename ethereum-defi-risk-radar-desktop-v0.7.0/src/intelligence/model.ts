@@ -154,6 +154,12 @@ export type ProtocolIntelligenceBundle = {
   generatedAt: string;
 };
 
+export type ProtocolResearchIntelligence = ProtocolIntelligenceBundle & {
+  invariants: InvariantApplicability[];
+  escalationPlans: EvidenceEscalationPlan[];
+  attackPaths: AttackPath[];
+};
+
 export type InvariantCategory =
   | "vault"
   | "lending"
