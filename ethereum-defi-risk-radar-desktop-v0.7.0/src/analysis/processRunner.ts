@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import type { EngineRunState } from "./model.js";
 
-const ALLOWED_EXECUTABLES = new Set(["slither", "slither.exe", "myth", "myth.exe", "forge", "forge.exe", "anvil", "anvil.exe", "echidna", "echidna.exe", "docker", "docker.exe"]);
+const ALLOWED_EXECUTABLES = new Set(["slither", "slither.exe", "myth", "myth.exe", "forge", "forge.exe", "anvil", "anvil.exe", "echidna", "echidna.exe", "halmos", "halmos.exe", "kontrol", "kontrol.exe", "certoraRun", "certoraRun.exe", "solc", "solc.exe", "vyper", "vyper.exe", "huffc", "huffc.exe", "docker", "docker.exe"]);
 
 export type ProcessRunResult = {
   state: Extract<EngineRunState, "complete" | "failed" | "timed_out" | "cancelled">;
