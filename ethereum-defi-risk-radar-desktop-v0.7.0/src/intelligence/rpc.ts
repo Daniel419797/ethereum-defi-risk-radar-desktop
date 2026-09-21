@@ -97,6 +97,13 @@ function sha256Hex(value: string) {
   return createHash("sha256").update(Buffer.from(value.slice(2), "hex")).digest("hex");
 }
 
+function decodedAddressRef(value: string) {
+  if (!WORD_RE.test(value) || /^0x0{64}$/i.test(value)) return undefined;
+  const candidate = "0x" + value.slice(-40);
+  if (!ADDRESS_RE.test(candidate)) return undefined;
+  return "address-ref-" + createHash("sha256").update(candidate.toLowerCase()).digest("hex").slice(0, 16);
+}
+
 function canonicalAddress(value: string) {
   if (!ADDRESS_RE.test(value)) throw new Error("Snapshot target contains an invalid Ethereum address.");
   return value.toLowerCase();
@@ -195,7 +202,12 @@ async function captureContract(
   for (const [slot, label] of slotMap) {
     const value = await rpc<string>("eth_getStorageAt", [address, slot, blockTag]);
     if (!WORD_RE.test(value)) throw new Error("RPC returned a non-canonical storage word.");
-    storage.push({ slot, label, value: value.toLowerCase() });
+    storage.push({
+      slot,
+      label,
+      valueSha256: sha256Hex(value.toLowerCase()),
+      decodedAddressRef: decodedAddressRef(value.toLowerCase())
+    });
   }
 
   const calls: SnapshotCallObservation[] = [];
@@ -281,14 +293,8 @@ export async function capturePinnedStateSnapshot(
   };
 }
 
-export function proxySlotValue(snapshot: PinnedStateSnapshot, contractRefId: string, label: string) {
+export function proxySlotObservation(snapshot: PinnedStateSnapshot, contractRefId: string, label: string) {
   return snapshot.contracts
     .find(contract => contract.contractRefId === contractRefId)
-    ?.storage.find(slot => slot.label === label)?.value;
-}
-
-export function storageWordAddress(value: string | undefined) {
-  if (!value || !WORD_RE.test(value) || /^0x0{64}$/i.test(value)) return undefined;
-  const candidate = "0x" + value.slice(-40);
-  return ADDRESS_RE.test(candidate) ? candidate.toLowerCase() : undefined;
+    ?.storage.find(slot => slot.label === label);
 }
