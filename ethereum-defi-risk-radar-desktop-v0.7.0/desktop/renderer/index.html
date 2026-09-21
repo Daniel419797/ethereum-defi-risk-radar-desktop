@@ -186,7 +186,7 @@
           <article class="metric-card blue"><div class="metric-icon">●●</div><div><small>Candidates</small><strong id="dashboard-metric-candidates">0</strong></div></article>
           <article class="metric-card red"><div class="metric-icon">!</div><div><small>High Priority</small><strong id="dashboard-metric-high">0</strong></div></article>
           <article class="metric-card green"><div class="metric-icon">✓</div><div><small>Source Reviewed</small><strong id="dashboard-metric-reviewed">0</strong></div></article>
-          <article class="metric-card purple"><div class="metric-icon">⚑</div><div><small>High-Review Flags</small><strong id="dashboard-metric-flags">0</strong></div></article>
+          <article class="metric-card purple"><div class="metric-icon">⚑</div><div><small>Critical / High Findings</small><strong id="dashboard-metric-flags">0</strong></div></article>
         </div>
 
         <div class="dashboard-bottom-grid">
@@ -227,7 +227,7 @@
           <article class="metric-card blue"><div class="metric-icon">●●</div><div><small>Total Candidates</small><strong id="results-metric-candidates">0</strong></div></article>
           <article class="metric-card red"><div class="metric-icon">!</div><div><small>High Priority</small><strong id="results-metric-high">0</strong></div></article>
           <article class="metric-card green"><div class="metric-icon">✓</div><div><small>Source Reviewed</small><strong id="results-metric-reviewed">0</strong></div></article>
-          <article class="metric-card purple"><div class="metric-icon">⚑</div><div><small>High-Review Flags</small><strong id="results-metric-flags">0</strong></div></article>
+          <article class="metric-card purple"><div class="metric-icon">⚑</div><div><small>Critical / High Findings</small><strong id="results-metric-flags">0</strong></div></article>
         </div>
 
         <article class="panel results-panel">
@@ -246,9 +246,11 @@
           </div>
           <div id="results-empty" class="empty-state hidden"><div class="empty-icon">⌁</div><strong>No candidates to show</strong><span>Run a scan or adjust your search filter.</span></div>
           <div id="results-report-actions" class="report-actions hidden">
-            <span id="results-report-label">Reports are available.</span>
-            <button id="results-show-json" class="secondary-button" type="button">Show JSON</button>
-            <button id="results-show-csv" class="secondary-button" type="button">Show CSV</button>
+            <span id="results-report-label">Security review artifacts are available.</span>
+            <button id="results-show-json" class="secondary-button" type="button">JSON</button>
+            <button id="results-show-summary-csv" class="secondary-button" type="button">Summary CSV</button>
+            <button id="results-show-findings-csv" class="secondary-button" type="button">Findings CSV</button>
+            <button id="results-show-security-html" class="secondary-button" type="button">Security HTML</button>
           </div>
         </article>
       </section>
@@ -270,7 +272,7 @@
 
         <div class="candidate-tabs" role="tablist">
           <button class="candidate-tab active" type="button" data-candidate-tab="overview">Overview</button>
-          <button class="candidate-tab" type="button" data-candidate-tab="findings">Source Findings <span id="candidate-findings-count" class="tab-count">0</span></button>
+          <button class="candidate-tab" type="button" data-candidate-tab="findings">Security Findings <span id="candidate-findings-count" class="tab-count">0</span></button>
           <button class="candidate-tab" type="button" data-candidate-tab="evidence">Public Evidence <span id="candidate-evidence-count" class="tab-count">0</span></button>
         </div>
 
@@ -289,14 +291,17 @@
         </div>
 
         <div id="candidate-tab-findings" class="candidate-tab-panel hidden">
-          <div id="findings-severity-metrics" class="metric-grid four"></div>
+          <div id="findings-severity-metrics" class="metric-grid six"></div>
+          <div id="candidate-analysis-warning" class="notice warning analysis-completeness-warning hidden" role="status"></div>
+          <p class="tab-intro">Severity and evidence strength are independent. A CRITICAL heuristic or structural signal is not automatically a reproduced exploit.</p>
           <div class="findings-toolbar">
-            <label>Severity<select id="findings-severity-filter"><option value="ALL">All</option><option value="HIGH_REVIEW">High Review</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option><option value="INFO">Info</option></select></label>
+            <label>Severity<select id="findings-severity-filter"><option value="ALL">All</option><option value="CRITICAL">Critical</option><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option><option value="INFO">Info</option></select></label>
+            <label>Evidence<select id="findings-evidence-filter"><option value="ALL">All</option><option value="REPRODUCED_FORK">Reproduced · fork</option><option value="REPRODUCED_MODEL">Reproduced · model</option><option value="EXECUTED">Executed</option><option value="STRUCTURAL">Structural</option><option value="HEURISTIC">Heuristic</option></select></label>
             <label>Category<select id="findings-kind-filter"><option value="ALL">All</option></select></label>
-            <label>Sort<select id="findings-sort"><option value="severity">Severity first</option><option value="file">File &amp; line</option></select></label>
+            <label>Sort<select id="findings-sort"><option value="severity">Severity first</option><option value="evidence">Evidence first</option><option value="file">File &amp; line</option></select></label>
           </div>
           <div id="candidate-findings-list" class="finding-list"></div>
-          <div id="candidate-findings-empty" class="empty-state hidden"><div class="empty-icon">✓</div><strong>No findings match this filter</strong><span>Adjust the severity or category filter.</span></div>
+          <div id="candidate-findings-empty" class="empty-state hidden"><div class="empty-icon">—</div><strong>No findings match this filter</strong><span>No emitted finding should be interpreted as proof that the protocol is vulnerability-free.</span></div>
         </div>
 
         <div id="candidate-tab-evidence" class="candidate-tab-panel hidden">
@@ -333,7 +338,7 @@
                 <div><dt>Pages / Query</dt><dd id="summary-pages">—</dd></div>
                 <div><dt>Sources Inspected</dt><dd id="summary-reviewed">0</dd></div>
                 <div><dt>High Priority</dt><dd id="summary-high">0</dd></div>
-                <div><dt>High-Review Flags</dt><dd id="summary-flags">0</dd></div>
+                <div><dt>Critical / High Findings</dt><dd id="summary-flags">0</dd></div>
                 <div><dt>Started</dt><dd id="summary-started">—</dd></div>
                 <div><dt>Completed</dt><dd id="summary-completed">—</dd></div>
                 <div><dt>Duration</dt><dd id="summary-duration">—</dd></div>
@@ -345,7 +350,7 @@
               <h2>Top Activity Highlights</h2>
               <div class="highlight-row blue"><span>⌕</span><div><small>Years Scanned</small><strong id="highlight-years">—</strong></div></div>
               <div class="highlight-row green"><span>✓</span><div><small>Sources Inspected</small><strong id="highlight-reviewed">0</strong></div></div>
-              <div class="highlight-row purple"><span>⚑</span><div><small>High-Review Flags</small><strong id="highlight-flags">0</strong></div></div>
+              <div class="highlight-row purple"><span>⚑</span><div><small>Critical / High Findings</small><strong id="highlight-flags">0</strong></div></div>
               <div class="highlight-row red"><span>!</span><div><small>High Priority Candidates</small><strong id="highlight-high">0</strong></div></div>
               <div class="highlight-row blue"><span>●●</span><div><small>Total Candidates</small><strong id="highlight-candidates">0</strong></div></div>
             </article>
