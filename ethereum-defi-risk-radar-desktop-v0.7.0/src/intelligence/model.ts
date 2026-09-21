@@ -1,4 +1,5 @@
-import type { AnalysisConfidence, AnalysisFinding, AnalysisSeverity, EvidenceStrength, ProtocolModel, SourceLocation } from "../analysis/model.js";
+import type { AnalysisConfidence, AnalysisFinding, AnalysisSeverity, EvidenceStrength, NativeAnalysisReport, ProtocolModel, SourceLocation } from "../analysis/model.js";
+import type { SynthesizedInvariant } from "./invariantSynthesis.js";
 
 export type ProvenanceKind =
   | "VERIFIED_SOURCE"
@@ -337,6 +338,7 @@ export type ProtocolIntelligenceBundle = {
   generatedAt: string;
   graph: ProtocolKnowledgeGraph;
   invariants: SelectedInvariant[];
+  synthesizedInvariants: SynthesizedInvariant[];
   escalationPlans: EvidenceEscalationPlan[];
   attackPaths: AttackPath[];
   protocolModelDigest: string;
@@ -353,5 +355,6 @@ export type ProtocolIntelligenceInput = {
     proxy: boolean;
     protocolModel: ProtocolModel;
     findings: AnalysisFinding[];
+    nativeAnalysis?: NativeAnalysisReport;
   }>;
 };
