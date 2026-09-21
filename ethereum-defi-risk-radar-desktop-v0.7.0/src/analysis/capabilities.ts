@@ -11,7 +11,8 @@ const TOOLS: ToolDefinition[] = [
   { id: "anvil", executable: "anvil", args: ["--version"] },
   { id: "echidna", executable: "echidna", args: ["--version"] },
   { id: "python", executable: process.platform === "win32" ? "python" : "python3", args: ["--version"] },
-  { id: "docker", executable: "docker", args: ["--version"] }
+  { id: "docker", executable: "docker", args: ["--version"] },
+  { id: "solc", executable: "solc", args: ["--version"] }
 ];
 
 export async function probeTool(
