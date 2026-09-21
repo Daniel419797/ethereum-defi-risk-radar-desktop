@@ -13,9 +13,13 @@ import { detectSignals } from "./signals.js";
 import type { ReadOnlyChainReader } from "./intelligence/rpc.js";
 import { capturePinnedStateSnapshot } from "./intelligence/snapshot.js";
 import { buildProtocolIntelligence } from "./intelligence/platform.js";
+import { analyzeRuntimeBytecode } from "./analysis/bytecode/analyzer.js";
+import { attestRuntimeBytecode } from "./intelligence/bytecode.js";
+import { resolveComplexProxy } from "./intelligence/proxyResolver.js";
+import { profileModernEvmSemantics } from "./intelligence/semantics.js";
 
 const PURPOSE =
-  "Defensive Ethereum DeFi OSINT research: use public documents only as leads, then promote a result to a protocol candidate only after resolving an Ethereum Mainnet deployment and validating verified source with Etherscan. Do not probe live contracts, test exploitability, or produce exploit instructions.";
+  "Defensive Ethereum DeFi OSINT research: use public documents only as leads, resolve Ethereum Mainnet deployment addresses, analyze deployed runtime bytecode through read-only RPC when configured, and enrich with verified source when available. Do not broadcast transactions or produce exploit instructions.";
 
 export const QUERY_TEMPLATES = [
   `"Ethereum DeFi protocol" {year} deprecated migration`,
@@ -556,10 +560,13 @@ export async function scanLegacyEthereumDefi(opts: {
     .sort((a, b) => b.score - a.score || b.confidence - a.confidence)
     .slice(0, MAX_PROTOCOL_GROUPS_TO_RESOLVE);
 
-  if (!opts.etherscan || opts.maxEtherscanLookupsPerCandidate <= 0) {
-    const reason = !opts.etherscan
-      ? "Etherscan is not configured; document leads were not promoted to protocol candidates."
-      : "Etherscan lookup budget is zero; document leads were not promoted to protocol candidates.";
+  if (
+    (!opts.etherscan ||
+      opts.maxEtherscanLookupsPerCandidate <= 0) &&
+    !opts.chainReader
+  ) {
+    const reason =
+      "Neither Etherscan source validation nor a read-only Ethereum Mainnet RPC is configured; document leads were not promoted to deployed protocol candidates.";
     opts.onProgress?.(reason);
     opts.onProgressEvent?.({
       phase: "ENRICH",
@@ -589,11 +596,16 @@ export async function scanLegacyEthereumDefi(opts: {
     const { lead, uniqueKinds, confidence, score } = item;
     opts.onProgressEvent?.({
       phase: "ENRICH",
-      message: `Resolving Ethereum Mainnet contracts for ${lead.label}`,
+      message: "Resolving Ethereum Mainnet contracts for " + lead.label,
       completed: enrichCompleted,
       total: qualifiedLeads.length,
       overallPercent:
-        65 + Math.round((enrichCompleted / Math.max(qualifiedLeads.length, 1)) * 30)
+        65 +
+        Math.round(
+          (enrichCompleted /
+            Math.max(qualifiedLeads.length, 1)) *
+            30
+        )
     });
 
     const resolved = await resolveProtocolAddresses({
@@ -602,11 +614,21 @@ export async function scanLegacyEthereumDefi(opts: {
       onProgress: opts.onProgress
     });
 
-    const uniqueAddresses = [...new Set(resolved.addresses.map(address => address.toLowerCase()))]
-      .filter(address => EVM_ADDRESS_EXACT_RE.test(address));
+    const uniqueAddresses = [
+      ...new Set(
+        resolved.addresses.map(address =>
+          address.toLowerCase()
+        )
+      )
+    ].filter(address =>
+      EVM_ADDRESS_EXACT_RE.test(address)
+    );
 
     let etherscanLookupsAttempted = 0;
+    let contractLookupsAttempted = 0;
     let verifiedSourceContracts = 0;
+    let bytecodeContractsAnalyzed = 0;
+    let bytecodeFindingCount = 0;
     let proxyContracts = 0;
     let proxyImplementationsResolved = 0;
     let sourceContractsInspected = 0;
@@ -614,87 +636,273 @@ export async function scanLegacyEthereumDefi(opts: {
     let sourceHighReviewCount = 0;
     let advancedFindingCount = 0;
     const sourceInspections: Candidate["ethereum"]["sourceInspections"] = [];
+    const bytecodeInspections: Candidate["ethereum"]["bytecodeInspections"] = [];
     const lookedUpAddresses = new Set<string>();
+
     let pinnedBlockNumber: number | undefined;
     if (opts.chainReader) {
       try {
         const chainId = await opts.chainReader.getChainId();
-        if (chainId !== 1) throw new Error("configured RPC is not Ethereum Mainnet");
-        pinnedBlockNumber = (await opts.chainReader.getBlock("latest")).number;
+        if (chainId !== 1) {
+          throw new Error(
+            "configured RPC is not Ethereum Mainnet"
+          );
+        }
+        pinnedBlockNumber = (
+          await opts.chainReader.getBlock("latest")
+        ).number;
       } catch (error) {
         opts.onProgress?.(
-          `Protocol state pinning unavailable for ${lead.label}: ${
-            error instanceof Error ? error.message : String(error)
-          }`
+          "Protocol state pinning unavailable for " +
+            lead.label +
+            ": " +
+            (error instanceof Error
+              ? error.message
+              : String(error))
         );
       }
     }
 
+    const lookupBudget = Math.max(
+      1,
+      opts.maxEtherscanLookupsPerCandidate > 0
+        ? opts.maxEtherscanLookupsPerCandidate
+        : opts.chainReader
+          ? 8
+          : 1
+    );
+
     for (const rootAddress of uniqueAddresses) {
-      if (etherscanLookupsAttempted >= opts.maxEtherscanLookupsPerCandidate) break;
-      let currentAddress: string | undefined = rootAddress;
+      if (contractLookupsAttempted >= lookupBudget) {
+        break;
+      }
+      let currentAddress: string | undefined =
+        rootAddress;
       const rootRef = contractRefId(rootAddress);
       let depth = 0;
 
       while (
         currentAddress &&
-        depth <= 2 &&
-        etherscanLookupsAttempted < opts.maxEtherscanLookupsPerCandidate
+        depth <= 3 &&
+        contractLookupsAttempted < lookupBudget
       ) {
-        const normalizedAddress = currentAddress.toLowerCase();
-        if (lookedUpAddresses.has(normalizedAddress)) break;
+        const normalizedAddress =
+          currentAddress.toLowerCase();
+        if (
+          lookedUpAddresses.has(normalizedAddress)
+        ) {
+          break;
+        }
         lookedUpAddresses.add(normalizedAddress);
-        etherscanLookupsAttempted += 1;
+        contractLookupsAttempted += 1;
 
         try {
-          const source = await opts.etherscan.getSourceMetadata(currentAddress, {
-            inspectSource: opts.inspectVerifiedSource,
-            maxSourceBytes: opts.maxSourceBytes,
-            maxFindings: opts.maxSourceFindings,
-            chainReader: pinnedBlockNumber !== undefined ? opts.chainReader : undefined,
-            pinnedBlockNumber,
-            attestBytecode: Boolean(opts.attestBytecode && pinnedBlockNumber !== undefined),
-            solcExecutable: opts.solcExecutable
-          });
+          let source:
+            | Awaited<
+                ReturnType<
+                  EtherscanClient["getSourceMetadata"]
+                >
+              >
+            | undefined;
 
-          if (source.verified) verifiedSourceContracts += 1;
-          if (source.proxy) proxyContracts += 1;
-          if (source.sourceInspection) {
-            sourceContractsInspected += 1;
-            sourceFindingCount += source.sourceInspection.findingCount;
-            sourceHighReviewCount += source.sourceInspection.severityCounts.HIGH_REVIEW;
-            advancedFindingCount += source.sourceInspection.advancedAnalysis.findings.length;
-            sourceInspections.push({
-              contractRefId: contractRefId(currentAddress),
+          if (
+            opts.etherscan &&
+            etherscanLookupsAttempted <
+              opts.maxEtherscanLookupsPerCandidate
+          ) {
+            etherscanLookupsAttempted += 1;
+            source =
+              await opts.etherscan.getSourceMetadata(
+                currentAddress,
+                {
+                  inspectSource:
+                    opts.inspectVerifiedSource,
+                  maxSourceBytes:
+                    opts.maxSourceBytes,
+                  maxFindings:
+                    opts.maxSourceFindings,
+                  chainReader:
+                    pinnedBlockNumber !==
+                    undefined
+                      ? opts.chainReader
+                      : undefined,
+                  pinnedBlockNumber,
+                  attestBytecode:
+                    Boolean(
+                      opts.attestBytecode &&
+                        pinnedBlockNumber !==
+                          undefined
+                    ),
+                  solcExecutable:
+                    opts.solcExecutable
+                }
+              );
+          } else if (
+            opts.chainReader &&
+            pinnedBlockNumber !== undefined
+          ) {
+            const runtimeBytecode =
+              await opts.chainReader.getCode(
+                currentAddress,
+                pinnedBlockNumber
+              );
+            const bytecodeAnalysis =
+              runtimeBytecode !== "0x"
+                ? analyzeRuntimeBytecode(
+                    runtimeBytecode
+                  )
+                : undefined;
+            source = {
+              verified: false,
+              proxy:
+                Boolean(
+                  bytecodeAnalysis &&
+                    bytecodeAnalysis.proxyKind !==
+                      "NONE"
+                ),
+              bytecodeAnalysis,
+              bytecodeAttestation:
+                opts.attestBytecode
+                  ? attestRuntimeBytecode({
+                      observedRuntimeBytecode:
+                        runtimeBytecode,
+                      unavailableReason:
+                        "Source is unverified; runtime bytecode was analyzed directly and no source-to-bytecode equivalence is claimed."
+                    })
+                  : undefined
+            };
+          }
+
+          if (!source) break;
+
+          if (source.verified) {
+            verifiedSourceContracts += 1;
+          }
+          if (source.proxy) {
+            proxyContracts += 1;
+          }
+
+          const ref =
+            contractRefId(currentAddress);
+          const role =
+            depth === 0
+              ? source.proxy
+                ? "PROXY"
+                : "DIRECT"
+              : "IMPLEMENTATION";
+
+          if (source.bytecodeAnalysis) {
+            bytecodeContractsAnalyzed += 1;
+            bytecodeFindingCount +=
+              source.bytecodeAnalysis.findings.length;
+            bytecodeInspections.push({
+              contractRefId: ref,
               rootContractRefId: rootRef,
-              sourceRole: depth === 0 ? (source.proxy ? "PROXY" : "DIRECT") : "IMPLEMENTATION",
-              contractName: source.contractName,
-              compilerVersion: source.compilerVersion,
+              sourceRole: role,
+              contractName:
+                source.contractName,
+              compilerVersion:
+                source.compilerVersion,
               proxy: source.proxy,
+              sourceVerified:
+                source.verified,
               address: currentAddress,
-              bytecodeAttestation: source.bytecodeAttestation,
-              inspection: source.sourceInspection
+              bytecodeAttestation:
+                source.bytecodeAttestation,
+              bytecodeAnalysis:
+                source.bytecodeAnalysis,
+              sourceLanguageProfile:
+                source.sourceLanguageProfile
             });
           }
 
-          const implementationAddress = source.implementationAddress?.trim();
+          if (source.sourceInspection) {
+            sourceContractsInspected += 1;
+            sourceFindingCount +=
+              source.sourceInspection.findingCount;
+            sourceHighReviewCount +=
+              source.sourceInspection.severityCounts
+                .HIGH_REVIEW;
+            advancedFindingCount +=
+              source.sourceInspection.advancedAnalysis
+                .findings.length;
+            sourceInspections.push({
+              contractRefId: ref,
+              rootContractRefId: rootRef,
+              sourceRole: role,
+              contractName:
+                source.contractName,
+              compilerVersion:
+                source.compilerVersion,
+              proxy: source.proxy,
+              address: currentAddress,
+              bytecodeAttestation:
+                source.bytecodeAttestation,
+              bytecodeAnalysis:
+                source.bytecodeAnalysis,
+              sourceLanguageProfile:
+                source.sourceLanguageProfile,
+              inspection:
+                source.sourceInspection
+            });
+          }
+
+          let implementationAddress =
+            source.implementationAddress?.trim();
+
           if (
-            source.proxy &&
+            !implementationAddress &&
+            opts.chainReader &&
+            pinnedBlockNumber !== undefined &&
+            source.bytecodeAnalysis
+          ) {
+            try {
+              const proxy =
+                await resolveComplexProxy({
+                  reader: opts.chainReader,
+                  address: currentAddress,
+                  blockNumber:
+                    pinnedBlockNumber
+                });
+              implementationAddress =
+                proxy.implementation;
+            } catch (error) {
+              opts.onProgress?.(
+                "Proxy resolution was partial for " +
+                  lead.label +
+                  ": " +
+                  (error instanceof Error
+                    ? error.message
+                    : String(error))
+              );
+            }
+          }
+
+          if (
             implementationAddress &&
-            EVM_ADDRESS_EXACT_RE.test(implementationAddress) &&
-            implementationAddress.toLowerCase() !== normalizedAddress &&
-            !lookedUpAddresses.has(implementationAddress.toLowerCase())
+            EVM_ADDRESS_EXACT_RE.test(
+              implementationAddress
+            ) &&
+            implementationAddress.toLowerCase() !==
+              normalizedAddress &&
+            !lookedUpAddresses.has(
+              implementationAddress.toLowerCase()
+            )
           ) {
             proxyImplementationsResolved += 1;
-            currentAddress = implementationAddress;
+            currentAddress =
+              implementationAddress;
             depth += 1;
             continue;
           }
         } catch (error) {
           opts.onProgress?.(
-            `Etherscan validation failed for ${lead.label}: ${
-              error instanceof Error ? error.message : String(error)
-            }`
+            "Deployment analysis failed for " +
+              lead.label +
+              ": " +
+              (error instanceof Error
+                ? error.message
+                : String(error))
           );
         }
 
@@ -702,68 +910,206 @@ export async function scanLegacyEthereumDefi(opts: {
       }
     }
 
+    const snapshotTargets = bytecodeInspections
+      .filter(inspection =>
+        Boolean(inspection.address)
+      )
+      .map(inspection => ({
+        address: inspection.address!,
+        contractRefId:
+          inspection.contractRefId
+      }));
+
     let pinnedStateSnapshot;
-    if (opts.chainReader && pinnedBlockNumber !== undefined && sourceInspections.length) {
+    if (
+      opts.chainReader &&
+      pinnedBlockNumber !== undefined &&
+      snapshotTargets.length
+    ) {
       try {
-        pinnedStateSnapshot = await capturePinnedStateSnapshot({
-          reader: opts.chainReader,
-          blockNumber: pinnedBlockNumber,
-          targets: sourceInspections
-            .filter(inspection => Boolean(inspection.address))
-            .map(inspection => ({
-              address: inspection.address!,
-              contractRefId: inspection.contractRefId
-            }))
-        });
+        pinnedStateSnapshot =
+          await capturePinnedStateSnapshot({
+            reader: opts.chainReader,
+            blockNumber:
+              pinnedBlockNumber,
+            targets: snapshotTargets
+          });
       } catch (error) {
         opts.onProgress?.(
-          `Pinned state snapshot failed for ${lead.label}: ${
-            error instanceof Error ? error.message : String(error)
-          }`
+          "Pinned state snapshot failed for " +
+            lead.label +
+            ": " +
+            (error instanceof Error
+              ? error.message
+              : String(error))
         );
       }
     }
 
+    const sourceByRef = new Map(
+      sourceInspections.map(inspection => [
+        inspection.contractRefId,
+        inspection
+      ])
+    );
+
+    const intelligenceInputs = [
+      ...sourceInspections.map(
+        inspection => {
+          const bytecode =
+            bytecodeInspections.find(
+              item =>
+                item.contractRefId ===
+                inspection.contractRefId
+            );
+          return {
+            contractRefId:
+              inspection.contractRefId,
+            rootContractRefId:
+              inspection.rootContractRefId,
+            sourceRole:
+              inspection.sourceRole,
+            contractName:
+              inspection.contractName,
+            proxy: inspection.proxy,
+            protocolModel:
+              inspection.inspection
+                .protocolModel,
+            findings: [
+              ...inspection.inspection
+                .advancedAnalysis.findings,
+              ...(bytecode?.bytecodeAnalysis
+                .findings || [])
+            ]
+          };
+        }
+      ),
+      ...bytecodeInspections
+        .filter(
+          inspection =>
+            !sourceByRef.has(
+              inspection.contractRefId
+            )
+        )
+        .map(inspection => {
+          const semantics =
+            profileModernEvmSemantics(
+              inspection.bytecodeAnalysis
+            );
+          const category =
+            semantics.standards.some(
+              item =>
+                item.standard ===
+                "ERC4626"
+            )
+              ? "vault"
+              : inspection.bytecodeAnalysis
+                    .proxyKind ===
+                  "ERC2535_DIAMOND"
+                ? "upgradeable"
+                : "unknown";
+          return {
+            contractRefId:
+              inspection.contractRefId,
+            rootContractRefId:
+              inspection.rootContractRefId,
+            sourceRole:
+              inspection.sourceRole,
+            contractName:
+              inspection.contractName ||
+              "Runtime " +
+                inspection.contractRefId,
+            proxy: inspection.proxy,
+            protocolModel: {
+              contracts: [
+                {
+                  id:
+                    "<bytecode>:" +
+                    inspection.contractRefId,
+                  name:
+                    inspection.contractName ||
+                    inspection.contractRefId,
+                  file: "<runtime-bytecode>",
+                  category,
+                  kind: "contract" as const,
+                  storageVariables: []
+                }
+              ],
+              calls: [],
+              assets: [],
+              categories: [category],
+              unresolvedCallCount:
+                inspection.bytecodeAnalysis
+                  .externalCallSites.length,
+              assumptions: [
+                "Protocol model was derived from deployed runtime bytecode because source-level semantics were unavailable."
+              ]
+            },
+            findings:
+              inspection.bytecodeAnalysis
+                .findings
+          };
+        })
+    ];
+
     const intelligence =
-      sourceInspections.length > 0
+      intelligenceInputs.length
         ? buildProtocolIntelligence({
-            protocolId: protocolId(lead.key),
+            protocolId:
+              protocolId(lead.key),
             label: lead.label,
-            contractInspections: sourceInspections.map(inspection => ({
-              contractRefId: inspection.contractRefId,
-              rootContractRefId: inspection.rootContractRefId,
-              sourceRole: inspection.sourceRole,
-              contractName: inspection.contractName,
-              proxy: inspection.proxy,
-              protocolModel: inspection.inspection.protocolModel,
-              findings: inspection.inspection.advancedAnalysis.findings
-            }))
+            contractInspections:
+              intelligenceInputs
           })
         : undefined;
 
-    // Documents are leads only. A row reaches Results only after at least one actual
-    // Mainnet address returns verified source metadata from Etherscan.
-    if (verifiedSourceContracts > 0) {
+    const hasDeploymentEvidence =
+      verifiedSourceContracts > 0 ||
+      bytecodeContractsAnalyzed > 0;
+
+    if (hasDeploymentEvidence) {
+      const resolvedConfidence =
+        verifiedSourceContracts > 0
+          ? confidence
+          : Math.min(confidence, 80);
       candidates.push({
         id: protocolId(lead.key),
         entityKind: "PROTOCOL",
         resolutionStatus:
-          sourceContractsInspected > 0 ? "SOURCE_ANALYZED" : "CONTRACTS_VERIFIED",
+          sourceContractsInspected > 0
+            ? "SOURCE_ANALYZED"
+            : verifiedSourceContracts > 0
+              ? "CONTRACTS_VERIFIED"
+              : "BYTECODE_ANALYZED",
         label: lead.label,
         hostname: lead.hostname,
         chain: "ethereum",
         network: "mainnet",
         researchScore: score,
-        ethereumConfidence: confidence,
-        signalCount: uniqueKinds.length,
-        sourceDiversity: new Set(lead.evidence.map(e => e.sourceHost)).size,
+        ethereumConfidence:
+          resolvedConfidence,
+        signalCount:
+          uniqueKinds.length,
+        sourceDiversity: new Set(
+          lead.evidence.map(
+            evidence =>
+              evidence.sourceHost
+          )
+        ).size,
         kinds: uniqueKinds,
-        evidence: lead.evidence.sort((a, b) => b.weight - a.weight).slice(0, 16),
-        resolutionEvidence: resolved.evidence.slice(0, 12),
+        evidence: lead.evidence
+          .sort(
+            (a, b) =>
+              b.weight - a.weight
+          )
+          .slice(0, 16),
+        resolutionEvidence:
+          resolved.evidence.slice(0, 12),
         ethereum: {
           chainId: 1,
           network: "ethereum-mainnet",
-          contractReferencesObserved: uniqueAddresses.length,
+          contractReferencesObserved:
+            uniqueAddresses.length,
           etherscanLookupsAttempted,
           verifiedSourceContracts,
           proxyContracts,
@@ -772,24 +1118,45 @@ export async function scanLegacyEthereumDefi(opts: {
           sourceFindingCount,
           sourceHighReviewCount,
           advancedFindingCount,
+          bytecodeContractsAnalyzed,
+          bytecodeFindingCount,
           sourceInspections,
+          bytecodeInspections,
           pinnedStateSnapshot,
           intelligence
         },
-        classification: classify(score, uniqueKinds.length)
+        classification: classify(
+          score,
+          uniqueKinds.length
+        )
       });
     } else {
-      opts.onProgress?.(`Filtered unresolved lead: ${lead.label}`);
+      opts.onProgress?.(
+        "Filtered unresolved lead: " +
+          lead.label
+      );
     }
 
     enrichCompleted += 1;
     opts.onProgressEvent?.({
       phase: "ENRICH",
-      message: `Resolved protocol lead ${enrichCompleted}/${qualifiedLeads.length}`,
+      message:
+        "Resolved protocol lead " +
+        enrichCompleted +
+        "/" +
+        qualifiedLeads.length,
       completed: enrichCompleted,
       total: qualifiedLeads.length,
       overallPercent:
-        65 + Math.round((enrichCompleted / Math.max(qualifiedLeads.length, 1)) * 30)
+        65 +
+        Math.round(
+          (enrichCompleted /
+            Math.max(
+              qualifiedLeads.length,
+              1
+            )) *
+            30
+        )
     });
   }
 
