@@ -1,4 +1,5 @@
 import type { SourceInspection } from "./sourceAnalyzer.js";
+import type { BytecodeAttestation, PinnedStateSnapshot, ProtocolIntelligenceBundle } from "./intelligence/model.js";
 
 export type TinyFishResult = {
   title?: string;
@@ -58,6 +59,9 @@ export type ContractInspectionSummary = {
   contractName?: string;
   compilerVersion?: string;
   proxy: boolean;
+  /** Raw address is kept only in-memory/local state; generated reports redact it. */
+  address?: string;
+  bytecodeAttestation?: BytecodeAttestation;
   inspection: SourceInspection;
 };
 
@@ -74,6 +78,8 @@ export type EthereumMetadata = {
   sourceHighReviewCount: number;
   advancedFindingCount: number;
   sourceInspections: ContractInspectionSummary[];
+  pinnedStateSnapshot?: PinnedStateSnapshot;
+  intelligence?: ProtocolIntelligenceBundle;
 };
 
 export type Candidate = {
