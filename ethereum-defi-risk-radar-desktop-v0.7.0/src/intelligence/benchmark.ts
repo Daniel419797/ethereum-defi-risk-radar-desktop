@@ -51,168 +51,173 @@ async function walkFiles(root: string, predicate: (file: string) => boolean, max
   return files;
 }
 
-async function readBoundedText(filePath: string) {
+async function readBoundedText(filePath: string, maxBytes = MAX_SOURCE_BYTES) {
   const stat = await fs.stat(filePath);
-  if (!stat.isFile() || stat.size > MAX_SOURCE_BYTES) {
-    throw new Error(`Benchmark source exceeds ${MAX_SOURCE_BYTES} bytes or is not a file: ${filePath}`);
+  if (!stat.isFile() || stat.size > maxBytes) {
+    throw new Error(`Benchmark input exceeds ${maxBytes} bytes or is not a file: ${filePath}`);
   }
   return fs.readFile(filePath, "utf8");
 }
 
-function parseSmartBugsLabels(source: string) {
-  const labels = new Set<string>();
-  for (const match of source.matchAll(/<yes>\s*<report>\s*([A-Z0-9_ -]+)/gi)) {
-    const kind = normalizeExpectedKind(match[1]);
-    if (kind) labels.add(kind);
-  }
-  for (const match of source.matchAll(/@vulnerable_at_lines?\s*:\s*([^\n*]+)/gi)) {
-    // line extraction happens separately; this loop intentionally only validates the annotation shape.
-    void match;
-  }
-  return [...labels];
+async function readBoundedJson<T>(filePath: string, maxBytes = 32_000_000): Promise<T> {
+  const text = await readBoundedText(filePath, maxBytes);
+  return JSON.parse(text) as T;
 }
 
-function parseVulnerableLines(source: string) {
-  const lines = new Set<number>();
-  for (const match of source.matchAll(/@vulnerable_at_lines?\s*:\s*([^\n*]+)/gi)) {
-    for (const token of match[1].match(/\d+/g) ?? []) {
-      const line = Number.parseInt(token, 10);
-      if (Number.isInteger(line) && line > 0) lines.add(line);
-    }
-  }
-  source.split("\n").forEach((line, index) => {
-    if (/<yes>\s*<report>/i.test(line)) lines.add(index + 1);
-  });
-  return [...lines].sort((a, b) => a - b);
-}
+type SmartBugsManifestItem = {
+  name?: string;
+  path?: string;
+  vulnerabilities?: Array<{ lines?: number[]; category?: string }>;
+};
 
 export async function prepareSmartBugsCases(
   root: string,
   opts: { maxCases?: number } = {}
 ): Promise<BenchmarkCase[]> {
-  const files = await walkFiles(root, file => file.endsWith(".sol"));
+  const manifestPath = path.join(path.resolve(root), "vulnerabilities.json");
+  const manifest = await readBoundedJson<SmartBugsManifestItem[]>(manifestPath);
+  if (!Array.isArray(manifest)) throw new Error("SmartBugs vulnerabilities.json must contain an array.");
+
   const maxCases = Math.max(1, Math.min(opts.maxCases ?? MAX_CASES_DEFAULT, MAX_CASES_DEFAULT));
   const cases: BenchmarkCase[] = [];
-  for (const file of files.slice(0, maxCases)) {
-    const sourceText = await readBoundedText(file);
-    const expectedKinds = parseSmartBugsLabels(sourceText);
-    if (!expectedKinds.length) continue;
+
+  for (const item of manifest) {
+    if (cases.length >= maxCases) break;
+    if (!item.path || !Array.isArray(item.vulnerabilities)) continue;
+    const sourcePath = await resolveCorpusSource(root, item.path);
+    if (!sourcePath) continue;
+    const sourceText = await readBoundedText(sourcePath);
+    const expectedKinds = new Set<string>();
+    const vulnerableLines = new Set<number>();
+    const rawCategories = new Set<string>();
+
+    for (const vulnerability of item.vulnerabilities) {
+      if (vulnerability.category) {
+        rawCategories.add(vulnerability.category);
+        const normalized = normalizeExpectedKind(vulnerability.category);
+        if (normalized) expectedKinds.add(normalized);
+      }
+      for (const line of vulnerability.lines ?? []) {
+        if (Number.isInteger(line) && line > 0) vulnerableLines.add(line);
+      }
+    }
+
+    if (!expectedKinds.size) continue;
     cases.push({
-      id: `smartbugs:${path.relative(root, file).replaceAll("\\", "/")}`,
+      id: `smartbugs:${item.path.replaceAll("\\", "/")}`,
       dataset: "SMARTBUGS_CURATED",
-      sourcePath: file,
+      sourcePath,
       sourceText,
-      expectedKinds,
-      vulnerableLines: parseVulnerableLines(sourceText),
+      expectedKinds: [...expectedKinds].sort(),
+      vulnerableLines: [...vulnerableLines].sort((a, b) => a - b),
       negative: false,
-      metadata: { relativePath: path.relative(root, file).replaceAll("\\", "/") }
+      metadata: {
+        relativePath: item.path.replaceAll("\\", "/"),
+        sourceName: item.name ?? path.basename(sourcePath),
+        categories: [...rawCategories].sort().join("|")
+      }
     });
   }
   return cases;
 }
 
-function parseCsv(text: string) {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let quoted = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const char = text[i];
-    if (quoted) {
-      if (char === '"' && text[i + 1] === '"') { field += '"'; i += 1; continue; }
-      if (char === '"') { quoted = false; continue; }
-      field += char;
-      continue;
-    }
-    if (char === '"') { quoted = true; continue; }
-    if (char === ",") { row.push(field); field = ""; continue; }
-    if (char === "\n") { row.push(field.replace(/\r$/, "")); rows.push(row); row = []; field = ""; continue; }
-    field += char;
-  }
-  if (field || row.length) { row.push(field.replace(/\r$/, "")); rows.push(row); }
-  return rows;
-}
+type CveTaxonomyLabel = {
+  primary?: { id?: string; name?: string };
+  secondary?: Array<{ id?: string; name?: string }>;
+};
 
-function rowObject(headers: string[], values: string[]) {
-  return Object.fromEntries(headers.map((header, index) => [header.trim().toLowerCase(), values[index]?.trim() ?? ""]));
-}
+type CveCatalogRecord = {
+  artifacts?: {
+    source?: { path?: string; contract?: string; chain?: string; address?: string };
+    runtime?: { path?: string; chain?: string; address?: string };
+  };
+  labels?: Record<string, CveTaxonomyLabel>;
+  localization?: {
+    summary?: string;
+    locations?: Array<{
+      source_path?: string;
+      contract?: string;
+      function?: {
+        start_line?: number;
+        end_line?: number;
+        signature?: string;
+        visibility?: string;
+      };
+      entry_points?: Array<{ exposed_by_contract?: string; path?: string[] }>;
+    }>;
+  };
+};
 
-function firstValue(row: Record<string, string>, names: string[]) {
-  for (const name of names) if (row[name]) return row[name];
-  return "";
-}
+type CveCatalog = {
+  schema_version?: string;
+  records?: Record<string, CveCatalogRecord>;
+};
 
-function extractKindsFromRow(row: Record<string, string>) {
-  const material = Object.entries(row)
-    .filter(([key]) => /cwe|swc|vulnerab|label|taxonomy|category|weakness/.test(key))
-    .map(([, value]) => value)
-    .join(" | ");
+function cveExpectedKinds(record: CveCatalogRecord) {
   const kinds = new Set<string>();
-  for (const [pattern, kind] of EXTERNAL_KIND_MAP) if (pattern.test(material)) kinds.add(kind);
-  return [...kinds];
-}
-
-function extractLinesFromRow(row: Record<string, string>) {
-  const material = Object.entries(row)
-    .filter(([key]) => /line|location/.test(key))
-    .map(([, value]) => value)
-    .join(" ");
-  return [...new Set((material.match(/\b\d+\b/g) ?? []).map(Number).filter(value => value > 0 && value < 10_000_000))];
-}
-
-async function resolveCorpusSource(root: string, candidate: string) {
-  if (!candidate) return undefined;
-  const normalized = candidate.replace(/^\.\//, "");
-  const resolved = path.resolve(root, normalized);
-  const rootPrefix = path.resolve(root) + path.sep;
-  if (!(resolved + path.sep).startsWith(rootPrefix) && !resolved.startsWith(rootPrefix)) return undefined;
-  try {
-    const stat = await fs.stat(resolved);
-    return stat.isFile() && resolved.endsWith(".sol") ? resolved : undefined;
-  } catch {
-    return undefined;
+  const rawLabels: string[] = [];
+  for (const taxonomy of Object.values(record.labels ?? {})) {
+    for (const label of [taxonomy.primary, ...(taxonomy.secondary ?? [])]) {
+      if (!label) continue;
+      const material = [label.id, label.name].filter(Boolean).join(" ");
+      if (material) rawLabels.push(material);
+      const kind = normalizeExpectedKind(material);
+      if (kind) kinds.add(kind);
+    }
   }
+  return { kinds: [...kinds].sort(), rawLabels };
+}
+
+function cveLocalizedLines(record: CveCatalogRecord) {
+  const lines = new Set<number>();
+  for (const location of record.localization?.locations ?? []) {
+    const start = location.function?.start_line;
+    const end = location.function?.end_line;
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start! <= 0 || end! < start!) continue;
+    // Function-level ground truth is a range, not a single vulnerable statement.
+    // Cap expansion so malformed metadata cannot create unbounded benchmark work.
+    const cappedEnd = Math.min(end!, start! + 2_000);
+    for (let line = start!; line <= cappedEnd; line += 1) lines.add(line);
+  }
+  return [...lines].sort((a, b) => a - b);
 }
 
 export async function prepareCveSmartContractCases(
   root: string,
   opts: { maxCases?: number } = {}
 ): Promise<BenchmarkCase[]> {
-  const indexPath = path.join(path.resolve(root), "data", "index.csv");
-  const text = await readBoundedText(indexPath);
-  const rows = parseCsv(text);
-  if (rows.length < 2) throw new Error("CVE Smart Contracts index.csv is empty.");
-  const headers = rows[0].map(value => value.trim().toLowerCase());
+  const catalog = await readBoundedJson<CveCatalog>(path.join(path.resolve(root), "cve.json"), 64_000_000);
+  if (!catalog.records || typeof catalog.records !== "object") {
+    throw new Error("CVE Smart Contracts cve.json is missing records.");
+  }
+
   const maxCases = Math.max(1, Math.min(opts.maxCases ?? MAX_CASES_DEFAULT, MAX_CASES_DEFAULT));
   const out: BenchmarkCase[] = [];
 
-  for (const values of rows.slice(1)) {
+  for (const [cveId, record] of Object.entries(catalog.records).sort(([a], [b]) => a.localeCompare(b))) {
     if (out.length >= maxCases) break;
-    const row = rowObject(headers, values);
-    const caseId = firstValue(row, ["cve", "cve_id", "id", "record_id"]) || `row-${out.length + 1}`;
-    const sourceCandidate = firstValue(row, [
-      "source_path", "artifact_path", "solidity_path", "file", "path", "local_path"
-    ]);
+    const sourceCandidate = record.artifacts?.source?.path ?? "";
     const sourcePath = await resolveCorpusSource(root, sourceCandidate);
-    const expectedKinds = extractKindsFromRow(row);
-    const refuted = /true|yes|refuted/i.test(firstValue(row, ["refuted", "claim_refuted", "is_refuted"]));
-    let sourceText: string | undefined;
-    if (sourcePath) {
-      try { sourceText = await readBoundedText(sourcePath); } catch { sourceText = undefined; }
-    }
+    if (!sourcePath) continue;
+    const sourceText = await readBoundedText(sourcePath);
+    const labels = cveExpectedKinds(record);
+    if (!labels.kinds.length) continue;
 
     out.push({
-      id: `cve:${caseId}`,
+      id: `cve:${cveId}`,
       dataset: "CVE_SMART_CONTRACTS",
-      sourcePath: sourcePath ?? sourceCandidate,
+      sourcePath,
       sourceText,
-      expectedKinds,
-      vulnerableLines: extractLinesFromRow(row),
-      negative: refuted,
+      expectedKinds: labels.kinds,
+      vulnerableLines: cveLocalizedLines(record),
+      negative: false,
       metadata: {
-        cve: caseId,
-        sourceResolved: Boolean(sourcePath),
-        refuted
+        cve: cveId,
+        sourceResolved: true,
+        chain: record.artifacts?.source?.chain ?? null,
+        contract: record.artifacts?.source?.contract ?? null,
+        labels: labels.rawLabels.join("|"),
+        localizationSummary: record.localization?.summary?.slice(0, 500) ?? null
       }
     });
   }
