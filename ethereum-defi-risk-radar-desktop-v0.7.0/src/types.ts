@@ -1,4 +1,5 @@
 import type { SourceInspection } from "./sourceAnalyzer.js";
+import type { ProtocolResearchIntelligence } from "./intelligence/model.js";
 
 export type TinyFishResult = {
   title?: string;
@@ -96,4 +97,6 @@ export type Candidate = {
     | "LOW_PUBLIC_SIGNAL"
     | "REVIEW"
     | "HIGH_RESEARCH_PRIORITY";
+  /** Source-backed graph/invariants are always available after inspection; RPC-derived state is optional. */
+  intelligence?: ProtocolResearchIntelligence;
 };
